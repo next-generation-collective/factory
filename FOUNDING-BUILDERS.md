@@ -21,6 +21,7 @@ the name you want shown, your GitHub handle, and the date you started using the 
 | Name | GitHub | Started | What they build |
 |---|---|---|---|
 | Sibusiso Mngomezulu | [@SibusisoMngo](https://github.com/SibusisoMngo) | 2026-10-24 | The factory itself |
+| Josh Nichols | [@codekylo](https://github.com/codekylo) | 2026-10-26 | Private US storage for PHI under HIPAA |
 
 ## Lessons by Founding Builders
 
