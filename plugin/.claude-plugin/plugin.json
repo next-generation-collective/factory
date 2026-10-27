@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "factory",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Next-Gen Factory inside Claude Code: every change is planned, approved by you, built, checked and proven. Africa builds.",
   "author": {
     "name": "Next-Gen Collective",

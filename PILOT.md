@@ -28,7 +28,7 @@ below work either way: in your AI's chat, or in a terminal.
 
 ## Step 1: what your project can prove (1 minute)
 
-In Claude Code, type `/factory`. Or in a terminal:
+In Claude Code, type `/factory:check`. Or in a terminal:
 
 ```bash
 cd your-project

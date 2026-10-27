@@ -1,6 +1,6 @@
 {
   "name": "@next-generation-collective/factory",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Checks the work you build with AI, proves it works, and learns from every builder. Built in the open, in Africa.",
   "type": "module",
   "bin": {

@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, extname } from "node:path";
+import { homedir } from "node:os";
+import { join, relative, extname, parse as parse_, resolve } from "node:path";
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -106,4 +107,18 @@ export function formatCount(n) {
 
 export function plural(n, word) {
   return `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
+}
+
+// Your home folder or the top of the disk is never one project. Reading it means reading
+// every file on the computer, which takes minutes and shows nothing.
+export function notAProjectFolder(root, home = homedir()) {
+  const here = resolve(root);
+  if (here !== resolve(home) && here !== parse_(here).root) return null;
+  return [
+    `This is ${here === resolve(home) ? "your home folder" : "the top of your disk"}, not a project.`,
+    "Go into a project folder first, then run it again. For example:",
+    "",
+    "  cd my-project",
+    "  npx @next-generation-collective/factory",
+  ].join("\n");
 }

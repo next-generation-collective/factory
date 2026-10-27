@@ -2,10 +2,11 @@
 // speak the Model Context Protocol: JSON-RPC messages, one per line, over stdin and stdout.
 // The person talks to their AI as usual; the AI uses these tools, and the factory keeps the
 // same rules as on the command line: a person approves, the checks decide, proof is kept.
-import { spawnSync } from "node:child_process";
+import { fork, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { analyseProject } from "./analyse.js";
 import { approvalView } from "./approval.js";
 import { firstName, fullName, isFirstVisit, rememberVisit } from "./banner.js";
@@ -15,6 +16,7 @@ import { paths, readConfig, readState, writeState } from "./config.js";
 import { composeBuildPrompt, composeSpecPrompt } from "./prompts.js";
 import { isGitRepo, reviewBase } from "./review.js";
 import { activeSpec, approve, findSpec, nextSpecName, setActive } from "./spec.js";
+import { notAProjectFolder } from "./util.js";
 import { formatResults, verify } from "./verify.js";
 
 const PROTOCOLS = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
@@ -128,13 +130,119 @@ function welcome() {
   return `Welcome to Next-Gen Factory${you}. You are one of the builders of the AI economy. Africa builds.\n(Show this welcome to the person.)${ask}`;
 }
 
-const text = (body, isError = false) => ({ content: [{ type: "text", text: body }], ...(isError ? { isError: true } : {}) });
+export const text = (body, isError = false) => ({ content: [{ type: "text", text: body }], ...(isError ? { isError: true } : {}) });
 
-export function createServer({ root = process.cwd(), send }) {
+// The slow tools. Each call runs in its own process (mcp-job.js), so the server keeps
+// answering ping, cancel and other calls while it works, and cancel can stop it.
+export const jobs = {
+  factory_check({ root, client }) {
+    const analysis = analyseProject(root);
+    if (analysis.empty) return text("No project found here. Open a project folder first.", true);
+    const config = readConfig(root);
+    const { value: run } = captured(() => verify(root, { deep: false, config, save: false }));
+    track("check", checkCounts(run, { mode: "mcp", client }), VERSION);
+    const greeting = welcome();
+    return text(
+      [
+        greeting ? `${greeting}\n` : "",
+        `${config.name} (${analysis.label})`,
+        ...analysis.summary.slice(1),
+        "",
+        "What this project can prove right now",
+        formatResults(root, run, { header: false }),
+        "",
+        "Checked by Next-Gen Factory.",
+      ].join("\n"),
+    );
+  },
+
+  factory_prove({ root, client }) {
+    const current = activeSpec(root);
+    if (!current) return text("No job yet. Call factory_start first.", true);
+    if (current.state !== "approved") return text(`The spec ${current.name} is ${current.state}. Get the person's approval with factory_approve.`, true);
+    const config = readConfig(root);
+    const { value: run } = captured(() => verify(root, { deep: true, config, save: true }));
+    const results = formatResults(root, run, { header: false });
+    const failed = run.results.filter((r) => r.kind === "proven" && r.status === "fail").map((r) => r.id).filter(Boolean);
+    const notDone = readState(root).notDone ?? 0;
+    if (!run.ok) {
+      writeState(root, { notDone: notDone + 1 });
+      track("prove", { mode: "mcp", client, ok: false, attempts: notDone + 1, failed }, VERSION);
+      return text(["NOT DONE. Fix what failed, then call factory_prove again.", "", results].join("\n"));
+    }
+    recordProven({ caught: notDone > 0 ? 1 : 0 });
+    track("prove", { mode: "mcp", client, ok: true, attempts: notDone + 1, caught: notDone > 0 }, VERSION);
+    return text(["DONE: the checks passed.", "", results, "", "Now call factory_review for the independent review."].join("\n"));
+  },
+
+  factory_review({ root, client }) {
+    if (!isGitRepo(root)) return text("The independent review needs git, to know what changed.", true);
+    const current = activeSpec(root);
+    const config = readConfig(root);
+    const base = reviewBase(root, { state: readState(root) });
+    const p = paths(root);
+    const lastRun = existsSync(p.lastVerify) ? JSON.parse(readFileSync(p.lastVerify, "utf8")) : null;
+    const { value: result } = captured(() =>
+      runReview(root, config, { artifacts: current?.state === "approved" ? current.artifacts : null, base, run: lastRun }),
+    );
+    const { text: reportText } = captured(() => report(root, {}));
+    if (result.problem?.startsWith("No reviewer agent")) {
+      return text(
+        `The independent review did not run: no second AI is installed on this computer (it uses ${config.agent?.command ?? "claude"}). Tell the person the change passed the checks but has no independent review. ${reportText}`,
+      );
+    }
+    track("review", { mode: "mcp", client, verdict: result.passed ? "approve" : "changes" }, VERSION);
+    const verdict = result.passed
+      ? "Proven by Next-Gen: the checks passed and a separate session approved the change.\nAfter reporting, ask the person once: was the factory useful this time? If they say anything, offer factory_feedback."
+      : `NOT DONE: ${result.summary}`;
+    return text([verdict, result.file ? `Review: ${result.file}` : "", reportText].filter(Boolean).join("\n"));
+  },
+};
+
+const JOB = fileURLToPath(new URL("./mcp-job.js", import.meta.url));
+
+// Runs one slow tool in its own process and resolves with its reply. On macOS and Linux the
+// job leads its own process group, so stopping it also stops the tests or review it started.
+export function forkJob(name, payload) {
+  const windows = process.platform === "win32";
+  const child = fork(JOB, [], { detached: !windows, stdio: ["ignore", "ignore", "pipe", "ipc"], windowsHide: true });
+  let errors = "";
+  let stopped = false;
+  child.stderr.on("data", (chunk) => {
+    errors = `${errors}${chunk}`.slice(-2000);
+  });
+  const done = new Promise((resolveReply) => {
+    let reply = null;
+    child.on("message", (message) => {
+      reply = message?.reply ?? null;
+    });
+    child.on("error", (error) => resolveReply(text(`The factory hit an error: ${error.message}`, true)));
+    child.on("exit", () => {
+      if (stopped) return resolveReply(null);
+      const why = errors.trim().split("\n").pop() || "the check stopped before it finished";
+      resolveReply(reply ?? text(`The factory hit an error: ${why}`, true));
+    });
+  });
+  const stop = () => {
+    if (stopped || child.exitCode !== null) return;
+    stopped = true;
+    try {
+      if (windows) spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      else process.kill(-child.pid, "SIGKILL");
+    } catch {
+      child.kill("SIGKILL");
+    }
+  };
+  child.send({ name, ...payload });
+  return { done, stop };
+}
+
+export function createServer({ root = process.cwd(), send, home, runJob = forkJob }) {
   let clientCanAsk = false;
   let client = "unknown";
   let nextId = 1;
   const waiting = new Map();
+  const running = new Map();
 
   // A question to the person through the AI tool's own approval box, which the AI cannot answer.
   const askPerson = (message, requestedSchema) =>
@@ -155,27 +263,6 @@ export function createServer({ root = process.cwd(), send }) {
       const feeling = guessFeeling(words);
       track("feedback", { mode: "mcp", client, feeling: feeling ?? "other" }, VERSION);
       return text(`Give the person this link. It opens their feedback filled in on GitHub; they check it and press Submit:\n${feedbackUrl(words, feeling)}`);
-    },
-
-    factory_check() {
-      const analysis = analyseProject(root);
-      if (analysis.empty) return text("No project found here. Open a project folder first.", true);
-      const config = readConfig(root);
-      const { value: run } = captured(() => verify(root, { deep: false, config, save: false }));
-      track("check", checkCounts(run, { mode: "mcp", client }), VERSION);
-      const greeting = welcome();
-      return text(
-        [
-          greeting ? `${greeting}\n` : "",
-          `${config.name} (${analysis.label})`,
-          ...analysis.summary.slice(1),
-          "",
-          "What this project can prove right now",
-          formatResults(root, run, { header: false }),
-          "",
-          "Checked by Next-Gen Factory.",
-        ].join("\n"),
-      );
     },
 
     factory_start({ request }) {
@@ -251,47 +338,6 @@ export function createServer({ root = process.cwd(), send }) {
       );
     },
 
-    factory_prove() {
-      const current = activeSpec(root);
-      if (!current) return text("No job yet. Call factory_start first.", true);
-      if (current.state !== "approved") return text(`The spec ${current.name} is ${current.state}. Get the person's approval with factory_approve.`, true);
-      const config = readConfig(root);
-      const { value: run } = captured(() => verify(root, { deep: true, config, save: true }));
-      const results = formatResults(root, run, { header: false });
-      const failed = run.results.filter((r) => r.kind === "proven" && r.status === "fail").map((r) => r.id).filter(Boolean);
-      const notDone = readState(root).notDone ?? 0;
-      if (!run.ok) {
-        writeState(root, { notDone: notDone + 1 });
-        track("prove", { mode: "mcp", client, ok: false, attempts: notDone + 1, failed }, VERSION);
-        return text(["NOT DONE. Fix what failed, then call factory_prove again.", "", results].join("\n"));
-      }
-      recordProven({ caught: notDone > 0 ? 1 : 0 });
-      track("prove", { mode: "mcp", client, ok: true, attempts: notDone + 1, caught: notDone > 0 }, VERSION);
-      return text(["DONE: the checks passed.", "", results, "", "Now call factory_review for the independent review."].join("\n"));
-    },
-
-    factory_review() {
-      if (!isGitRepo(root)) return text("The independent review needs git, to know what changed.", true);
-      const current = activeSpec(root);
-      const config = readConfig(root);
-      const base = reviewBase(root, { state: readState(root) });
-      const p = paths(root);
-      const lastRun = existsSync(p.lastVerify) ? JSON.parse(readFileSync(p.lastVerify, "utf8")) : null;
-      const { value: result } = captured(() =>
-        runReview(root, config, { artifacts: current?.state === "approved" ? current.artifacts : null, base, run: lastRun }),
-      );
-      const { text: reportText } = captured(() => report(root, {}));
-      if (result.problem?.startsWith("No reviewer agent")) {
-        return text(
-          `The independent review did not run: no second AI is installed on this computer (it uses ${config.agent?.command ?? "claude"}). Tell the person the change passed the checks but has no independent review. ${reportText}`,
-        );
-      }
-      track("review", { mode: "mcp", client, verdict: result.passed ? "approve" : "changes" }, VERSION);
-      const verdict = result.passed
-        ? "Proven by Next-Gen: the checks passed and a separate session approved the change.\nAfter reporting, ask the person once: was the factory useful this time? If they say anything, offer factory_feedback."
-        : `NOT DONE: ${result.summary}`;
-      return text([verdict, result.file ? `Review: ${result.file}` : "", reportText].filter(Boolean).join("\n"));
-    },
   };
 
   async function handle(message) {
@@ -321,7 +367,9 @@ export function createServer({ root = process.cwd(), send }) {
         return;
       }
       case "notifications/initialized":
+        return;
       case "notifications/cancelled":
+        running.get(params?.requestId)?.stop();
         return;
       case "ping":
         reply({});
@@ -330,10 +378,23 @@ export function createServer({ root = process.cwd(), send }) {
         reply({ tools: TOOLS });
         return;
       case "tools/call": {
-        const tool = tools[params?.name];
-        if (!tool) return fail(-32602, `Unknown tool: ${params?.name}`);
+        const name = params?.name;
+        const slow = Object.hasOwn(jobs, name);
+        if (!slow && !Object.hasOwn(tools, name)) return fail(-32602, `Unknown tool: ${name}`);
+        // Reading the home folder or the whole disk takes minutes and finds nothing useful.
+        const refusal = !["factory_share", "factory_feedback"].includes(name) && notAProjectFolder(root, home);
+        if (refusal) return reply(text(`${refusal.split("\n")[0]} Open your AI tool in a project folder, then try again.`, true));
+        if (slow) {
+          const job = runJob(name, { root, client, version: VERSION, args: params?.arguments ?? {} });
+          running.set(id, job);
+          const result = await job.done;
+          running.delete(id);
+          // A cancelled call gets no reply.
+          if (result) reply(result);
+          return;
+        }
         try {
-          reply(await tool(params?.arguments ?? {}));
+          reply(await tools[name](params?.arguments ?? {}));
         } catch (error) {
           reply(text(`The factory hit an error: ${error?.message ?? error}`, true));
         }
@@ -344,16 +405,29 @@ export function createServer({ root = process.cwd(), send }) {
     }
   }
 
-  return { handle };
+  const stopAll = () => {
+    for (const job of running.values()) job.stop();
+  };
+  // Work already started still gets its reply when the AI tool stops sending.
+  const idle = () => Promise.all([...running.values()].map((job) => job.done));
+
+  return { handle, stopAll, idle };
 }
 
 let VERSION = "0.0.0";
+
+export function setVersion(version) {
+  VERSION = version;
+}
 
 export async function serve(version, root = process.cwd()) {
   VERSION = version;
   process.env.FACTORY_MCP = "1";
   const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
   const server = createServer({ root: resolve(root), send });
+  // Jobs run in their own process groups, so they would outlive the server if it were stopped.
+  process.once("exit", server.stopAll);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.once(signal, () => process.exit(0));
   const lines = createInterface({ input: process.stdin });
   for await (const line of lines) {
     if (!line.trim()) continue;
@@ -366,5 +440,6 @@ export async function serve(version, root = process.cwd()) {
     }
     server.handle(message);
   }
+  await server.idle();
   return 0;
 }

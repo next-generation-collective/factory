@@ -40,7 +40,7 @@ When you use the factory inside Claude Code, Cursor or another AI tool:
   terminal.
 - **Your AI decides whether to call the factory.** The Claude Code plugin tells Claude at the
   start of every session to use it for any change, and in our tests it then did. If your AI
-  ever builds without asking for your approval, type `/factory` with your request.
+  ever builds without asking for your approval, type `/factory:build` with your request.
 - **Tested so far:** Claude Code, end to end. Cursor, Codex, Gemini CLI and VS Code use the
   same open standard but have not been tested by us yet.
 

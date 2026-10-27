@@ -1,5 +1,5 @@
 ---
-description: Next-Gen Factory. Check what this project can prove, or start a proven change.
+description: Next-Gen Factory. Start a proven change; with nothing after it, check what this project can prove.
 argument-hint: "[what you want to build or change]"
 ---
 

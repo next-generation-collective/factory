@@ -2,6 +2,19 @@
 
 Newest first. Dates are YYYY-MM-DD.
 
+## 0.5.1 (2026-10-27, in the Claude Code plugin)
+
+### Fixed
+
+- Inside your AI, the factory no longer freezes your session. Checks, proofs and reviews run
+  in their own process, so your AI can keep talking to the factory, and stopping a call stops
+  the work too, including any tests or review it started. You still get the result when it
+  finishes.
+- Opened in your home folder or the top of your disk, the factory says so at once instead of
+  reading every file on the computer (that took minutes).
+- The Claude Code commands are now `/factory:check` and `/factory:build`, instead of one
+  command that showed as `/factory:factory`.
+
 ## 0.5.0 (2026-10-27, in the Claude Code plugin; npm to follow)
 
 ### Added

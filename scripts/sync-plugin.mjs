@@ -15,4 +15,9 @@ const manifest = join(root, "plugin", ".claude-plugin", "plugin.json");
 const plugin = JSON.parse(readFileSync(manifest, "utf8"));
 plugin.version = version;
 writeFileSync(manifest, `${JSON.stringify(plugin, null, 2)}\n`);
+// The marketplace lists the same version, so Claude Code offers the update.
+const listing = join(root, ".claude-plugin", "marketplace.json");
+const marketplace = JSON.parse(readFileSync(listing, "utf8"));
+for (const entry of marketplace.plugins) if (entry.name === plugin.name) entry.version = version;
+writeFileSync(listing, `${JSON.stringify(marketplace, null, 2)}\n`);
 console.log(`plugin/server synced with cli ${version}`);

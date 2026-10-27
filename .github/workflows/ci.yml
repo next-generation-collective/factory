@@ -38,4 +38,4 @@ jobs:
       - name: The Claude Code plugin carries the same factory as the package
         run: |
           node scripts/sync-plugin.mjs
-          git diff --exit-code -- plugin
+          git diff --exit-code -- plugin .claude-plugin

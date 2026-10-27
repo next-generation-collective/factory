@@ -1,12 +1,16 @@
 {
   "name": "next-gen",
-  "owner": { "name": "Next-Gen Collective", "url": "https://nextgencollective.co.za" },
+  "owner": {
+    "name": "Next-Gen Collective",
+    "url": "https://nextgencollective.co.za"
+  },
   "description": "Next-Gen Collective's tools for builders. Africa builds.",
   "plugins": [
     {
       "name": "factory",
       "source": "./plugin",
-      "description": "Every change planned, approved by you, built, checked and proven."
+      "description": "Every change planned, approved by you, built, checked and proven.",
+      "version": "0.5.1"
     }
   ]
 }

@@ -1,10 +1,9 @@
-import { homedir } from "node:os";
 import { banner } from "./banner.js";
 import { serve } from "./mcp.js";
+import { notAProjectFolder } from "./util.js";
 import { feedbackUrl, guessFeeling, needsAnswer, send, setSharing, settings, SHARE_QUESTION, sharing, blockedByEnvironment } from "./telemetry.js";
 import { spawn } from "node:child_process";
 import { createInterface as askLine } from "node:readline/promises";
-import { parse as parse_, resolve } from "node:path";
 import { createRequire } from "node:module";
 import {
   approveCommand,
@@ -137,19 +136,7 @@ function shareCommand(choice) {
   return 0;
 }
 
-// Your home folder or the top of the disk is never one project. Reading it means reading
-// every file on the computer, which takes minutes and shows nothing.
-export function notAProjectFolder(root, home = homedir()) {
-  const here = resolve(root);
-  if (here !== resolve(home) && here !== parse_(here).root) return null;
-  return [
-    `This is ${here === resolve(home) ? "your home folder" : "the top of your disk"}, not a project.`,
-    "Go into a project folder first, then run it again. For example:",
-    "",
-    "  cd my-project",
-    "  npx @next-generation-collective/factory",
-  ].join("\n");
-}
+export { notAProjectFolder };
 
 export async function main(argv) {
   const { flags, positional } = parse(argv);

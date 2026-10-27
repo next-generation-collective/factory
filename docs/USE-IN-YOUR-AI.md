@@ -35,7 +35,8 @@ downloaded.
 
 | Say or type | What happens |
 |---|---|
-| `/factory` | What your project can prove right now. Claude Code may show it as `/factory:factory`. |
+| `/factory:check` | What your project can prove right now. |
+| `/factory:build add a discount` | Starts a proven change: plan, your approval, build, proof. |
 | *"stop sharing with Next-Gen"* | Sharing is turned off. Nothing leaves your computer. |
 | *"tell Next-Gen it caught a real bug"* | Your feedback opens filled in on GitHub, for you to submit. |
 
@@ -44,7 +45,7 @@ downloaded.
 | What you see | What to do |
 |---|---|
 | Claude says the factory tools are not available | Type `/reload-plugins`. If that does not help, check `node --version` shows 20 or newer. |
-| Claude builds without asking for your approval | Type `/factory` followed by your request, for example `/factory add a discount`. |
+| Claude builds without asking for your approval | Type `/factory:build` followed by your request, for example `/factory:build add a discount`. |
 | You want the newest version | Type `/plugin`, choose the factory plugin and update it, or run `claude plugin update factory@next-gen`. |
 
 ## Cursor, Codex, Gemini CLI and VS Code
