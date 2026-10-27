@@ -19,4 +19,4 @@ Give the application under test its own available port. Reject an address that w
 
 During the factory's third development run on 24 October 2026, the tester connected to an existing development server. This produced misleading test results because the new application was never tested.
 
-Contributed by @LovelyPandaGuy.
+Contributed by David Musa-Aisien ([@LovelyPandaGuy](https://github.com/LovelyPandaGuy)).
