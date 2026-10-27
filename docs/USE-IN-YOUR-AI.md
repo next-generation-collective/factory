@@ -77,9 +77,14 @@ gemini mcp add factory npx -y @next-generation-collective/factory@latest mcp
 
 ### VS Code
 
-```bash
-code --add-mcp '{"name":"factory","command":"npx","args":["-y","@next-generation-collective/factory@latest","mcp"]}'
+In your project, make a file called `.vscode/mcp.json` with this in it:
+
+```json
+{ "servers": { "factory": { "type": "stdio", "command": "npx", "args": ["-y", "@next-generation-collective/factory@latest", "mcp"] } } }
 ```
+
+Put it in the project, not in your user settings. VS Code starts servers from your user
+settings in your home folder, so the factory cannot see your project.
 
 ## What happens
 

@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createServer } from "../lib/mcp.js";
 import { readApproval } from "../lib/spec.js";
 
@@ -126,4 +127,37 @@ test("mcp: nothing the commands print reaches the AI tool's channel", async (t) 
   await ready;
   await tool(1, "factory_start", { request: "add numbers" });
   assert.ok(sent.every((m) => m.jsonrpc === "2.0"));
+});
+
+test("mcp: started in the home folder, it asks the AI tool which project is open (VS Code)", async (t) => {
+  const project = temp(t);
+  const home = mkdtempSync(join(tmpdir(), "factory-mcp-start-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const sent = [];
+  let server;
+  const send = (message) => {
+    sent.push(message);
+    if (message.method === "roots/list") {
+      queueMicrotask(() => server.handle({ jsonrpc: "2.0", id: message.id, result: { roots: [{ uri: pathToFileURL(project).href, name: "shop" }] } }));
+    }
+  };
+  server = createServer({ root: home, home, send });
+  await server.handle({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: { roots: {} } } });
+  await server.handle({ jsonrpc: "2.0", method: "notifications/initialized" });
+  await server.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "factory_start", arguments: { request: "Add a total" } } });
+  const reply = sent.find((m) => m.id === 1).result;
+  assert.ok(!reply.isError, reply.content[0].text);
+  assert.match(reply.content[0].text, /Next-Gen Factory job/);
+  assert.ok(existsSync(join(project, "specs")));
+});
+
+test("mcp: started in the home folder with no way to ask, it still refuses kindly", async (t) => {
+  const home = mkdtempSync(join(tmpdir(), "factory-mcp-start-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const sent = [];
+  const server = createServer({ root: home, home, send: (m) => sent.push(m) });
+  await server.handle({ jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {} } });
+  await server.handle({ jsonrpc: "2.0", method: "notifications/initialized" });
+  await server.handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "factory_check", arguments: {} } });
+  assert.match(sent.find((m) => m.id === 1).result.content[0].text, /home folder/);
 });
