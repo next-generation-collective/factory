@@ -22,6 +22,7 @@ the name you want shown, your GitHub handle, and the date you started using the 
 |---|---|---|---|
 | Sibusiso Mngomezulu | [@SibusisoMngo](https://github.com/SibusisoMngo) | 2026-10-24 | The factory itself |
 | Josh Nichols | [@codekylo](https://github.com/codekylo) | 2026-10-26 | Private US storage for PHI under HIPAA |
+| David Musa-Aisien | [@LovelyPandaGuy](https://github.com/LovelyPandaGuy) | 2026-10-27 | First lesson: testing the wrong development server |
 
 ## Lessons by Founding Builders
 
