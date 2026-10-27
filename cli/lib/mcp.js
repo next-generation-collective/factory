@@ -239,18 +239,35 @@ export function forkJob(name, payload) {
 
 export function createServer({ root = process.cwd(), send, home, runJob = forkJob }) {
   let clientCanAsk = false;
+  let clientHasRoots = false;
   let client = "unknown";
   let nextId = 1;
   const waiting = new Map();
   const running = new Map();
+  const startedIn = root;
+  let rootsReady = Promise.resolve();
 
-  // A question to the person through the AI tool's own approval box, which the AI cannot answer.
-  const askPerson = (message, requestedSchema) =>
+  const ask = (method, params) =>
     new Promise((resolveAnswer) => {
       const id = `factory-${nextId++}`;
       waiting.set(id, resolveAnswer);
-      send({ jsonrpc: "2.0", id, method: "elicitation/create", params: { message, requestedSchema } });
+      send({ jsonrpc: "2.0", id, method, params });
     });
+
+  // A question to the person through the AI tool's own approval box, which the AI cannot answer.
+  const askPerson = (message, requestedSchema) => ask("elicitation/create", { message, requestedSchema });
+
+  // Some AI tools (VS Code) start the factory in the home folder and say which project is open
+  // only when asked. Started in a real project, the factory stays there.
+  const findProject = () => {
+    if (!clientHasRoots || !notAProjectFolder(startedIn, home)) return;
+    const answer = ask("roots/list", {}).then((result) => {
+      const folder = (result?.roots ?? []).map((r) => String(r?.uri ?? "")).find((uri) => uri.startsWith("file:"));
+      if (folder) root = fileURLToPath(folder);
+    });
+    const giveUp = new Promise((done) => setTimeout(done, 3000).unref?.());
+    rootsReady = Promise.race([answer, giveUp]);
+  };
 
   const tools = {
     factory_share({ share }) {
@@ -356,6 +373,7 @@ export function createServer({ root = process.cwd(), send, home, runJob = forkJo
     switch (method) {
       case "initialize": {
         clientCanAsk = Boolean(params?.capabilities?.elicitation);
+        clientHasRoots = Boolean(params?.capabilities?.roots);
         client = String(params?.clientInfo?.name ?? "unknown").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 32);
         const asked = params?.protocolVersion;
         reply({
@@ -367,6 +385,8 @@ export function createServer({ root = process.cwd(), send, home, runJob = forkJo
         return;
       }
       case "notifications/initialized":
+      case "notifications/roots/list_changed":
+        findProject();
         return;
       case "notifications/cancelled":
         running.get(params?.requestId)?.stop();
@@ -381,6 +401,7 @@ export function createServer({ root = process.cwd(), send, home, runJob = forkJo
         const name = params?.name;
         const slow = Object.hasOwn(jobs, name);
         if (!slow && !Object.hasOwn(tools, name)) return fail(-32602, `Unknown tool: ${name}`);
+        await rootsReady;
         // Reading the home folder or the whole disk takes minutes and finds nothing useful.
         const refusal = !["factory_share", "factory_feedback"].includes(name) && notAProjectFolder(root, home);
         if (refusal) return reply(text(`${refusal.split("\n")[0]} Open your AI tool in a project folder, then try again.`, true));
