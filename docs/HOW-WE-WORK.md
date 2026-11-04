@@ -174,7 +174,7 @@ Nothing goes to a store or to real users while either of these is open:
 |---|---|
 | `specs/NNN-name/` | The spec, plan, tasks, reuse report, approval and evidence |
 | `factory.config.json` | What the project is, who depends on it, what must never break |
-| `.factory/` | Prompts, run history and evidence. Git-ignored |
+| `.factory/` | The constitution, evidence and reports, committed and shared. Only machine state (`state.json`, `last-verify.json`, `prompts/`, `idea.txt`) is git-ignored |
 | `.factory/constitution.md` | The engineering rules, copied into your project from the factory |
 | `kit/` | Test setup proven on a real run |
 | `lessons/` | Dated failures and the checks they became |

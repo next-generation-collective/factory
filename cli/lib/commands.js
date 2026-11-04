@@ -89,13 +89,46 @@ export function ensureConfig(root) {
   return readConfig(root);
 }
 
-function ignoreFactory(root) {
-  if (!existsSync(join(root, ".git"))) return;
+const IGNORE_BLOCK = `# Software Factory (machine state; evidence, reports and lessons are committed and shared)
+.factory/state.json
+.factory/last-verify.json
+.factory/prompts/
+.factory/idea.txt
+`;
+
+// Only machine state is hidden from git. Evidence, reports, lessons and the constitution
+// are team records, so they stay committable. The old block hid all of .factory/ and is
+// replaced wherever the factory next runs. Touches nothing a person wrote.
+export function ignoreFactory(root) {
+  if (!existsSync(join(root, ".git"))) return "unchanged";
   const file = join(root, ".gitignore");
   const text = existsSync(file) ? readFileSync(file, "utf8") : "";
-  if (/^\.factory\/?$/m.test(text)) return;
-  const prefix = text.endsWith("\n") || text === "" ? "" : "\n";
-  writeFileSync(file, `${text}${prefix}\n# Software Factory\n.factory/\n`);
+  if (text.includes(".factory/state.json")) return "unchanged";
+  let next;
+  let outcome = "migrated";
+  if (/^# Software Factory\r?\n\.factory\/\r?$/m.test(text)) {
+    next = text.replace(/^# Software Factory\r?\n\.factory\/\r?$/m, IGNORE_BLOCK.trimEnd());
+  } else if (/^\.factory\/?\r?$/m.test(text)) {
+    next = text.replace(/^\.factory\/?\r?$/m, IGNORE_BLOCK.trimEnd());
+  } else {
+    const prefix = text.endsWith("\n") || text === "" ? "" : "\n";
+    next = `${text}${prefix}\n${IGNORE_BLOCK}`;
+    outcome = "created";
+  }
+  try {
+    writeFileSync(file, next);
+    return outcome;
+  } catch {
+    return "failed";
+  }
+}
+
+function sayIgnored(outcome) {
+  if (outcome === "created" || outcome === "migrated") {
+    console.log(colors.dim("Evidence, reports and lessons are saved to be committed and shared; only .factory machine state is ignored."));
+  } else if (outcome === "failed") {
+    console.log(colors.yellow("Could not update .gitignore. Evidence, reports and lessons are meant to be committed; only .factory machine state should be ignored."));
+  }
 }
 
 function normalizeKind(value, fallback) {
@@ -169,9 +202,9 @@ export async function init(root, opts = {}) {
 
   writeConfig(root, config);
   scaffold(root);
-  ignoreFactory(root);
 
   console.log(colors.green(`Created ${rel(root, paths(root).config)}`));
+  sayIgnored(ignoreFactory(root));
   console.log(colors.dim(`Detected: ${stack.framework ?? "unknown"} / ${stack.language ?? "unknown"}`));
   console.log("");
   console.log("Next:");
@@ -473,8 +506,8 @@ function nextSteps(root, configured) {
 
 function createConfig(root) {
   const config = ensureConfig(root);
-  ignoreFactory(root);
   console.log(colors.dim(`Created factory.config.json (edit it any time). Agent: ${config.agent.command}`));
+  sayIgnored(ignoreFactory(root));
   return config;
 }
 

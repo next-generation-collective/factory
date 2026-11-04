@@ -114,9 +114,11 @@ behaviour and lets tests pass without testing the fix.
   item leaves a screen recording in the spec's `evidence/` folder.
 
 ### IX. Every run makes the factory better
-After each spec, record what went wrong and what went right in `LESSONS.md`, and turn
-each repeatable lesson into a rule here, a trap in "Known traps" below, or a tool in
-`kit/`. A lesson that only lives in someone's memory will be relearned the hard way.
+After each spec, record what went wrong and what went right as a dated file in `lessons/`
+at the project root. Lessons are committed and shared with the whole team, never kept
+private to one person or one AI session. Turn each repeatable lesson into a rule here, a
+trap in "Known traps" below, or a tool in `kit/`. A lesson that only lives in someone's
+memory, or in a folder git ignores, will be relearned the hard way.
 
 ### X. Expected baseline
 People judge an app against the apps they already use. A chat with no way to start a

@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { init, lessonNew, report } from "../lib/commands.js";
+import { ignoreFactory, init, lessonNew, report } from "../lib/commands.js";
+import { checkSecrets } from "../lib/checks.js";
 import { readConfig } from "../lib/config.js";
 import { verify } from "../lib/verify.js";
 
@@ -87,4 +88,76 @@ test("report: writes a handover with the limits stated", async (t) => {
   assert.match(text, /What this does not prove/);
   assert.match(text, /POPIA/);
   assert.match(text, /factory verify --deep/);
+});
+
+test("ignore: a fresh project hides machine state only", (t) => {
+  const root = temp(t);
+  mkdirSync(join(root, ".git"), { recursive: true });
+  assert.equal(ignoreFactory(root), "created");
+  const text = readFileSync(join(root, ".gitignore"), "utf8");
+  for (const line of [".factory/state.json", ".factory/last-verify.json", ".factory/prompts/", ".factory/idea.txt"]) {
+    assert.ok(text.includes(line), line);
+  }
+  assert.match(text, /committed and shared/);
+  assert.ok(!/^\.factory\/?$/m.test(text));
+});
+
+test("ignore: the old block is replaced once, then left alone", (t) => {
+  const root = temp(t);
+  mkdirSync(join(root, ".git"), { recursive: true });
+  writeFileSync(join(root, ".gitignore"), "node_modules/\n\n# Software Factory\n.factory/\n");
+  assert.equal(ignoreFactory(root), "migrated");
+  const once = readFileSync(join(root, ".gitignore"), "utf8");
+  assert.ok(once.startsWith("node_modules/\n"));
+  assert.ok(once.includes(".factory/state.json"));
+  assert.ok(!/^\.factory\/$/m.test(once));
+  assert.equal(ignoreFactory(root), "unchanged");
+  assert.equal(readFileSync(join(root, ".gitignore"), "utf8"), once);
+});
+
+test("ignore: a bare .factory/ line is replaced and nothing else moves", (t) => {
+  const root = temp(t);
+  mkdirSync(join(root, ".git"), { recursive: true });
+  writeFileSync(join(root, ".gitignore"), "dist/\n.factory/\n.env\n");
+  assert.equal(ignoreFactory(root), "migrated");
+  const text = readFileSync(join(root, ".gitignore"), "utf8");
+  assert.ok(text.startsWith("dist/\n"));
+  assert.ok(text.endsWith(".env\n"));
+  assert.ok(text.includes(".factory/idea.txt"));
+  assert.ok(!/^\.factory\/$/m.test(text));
+});
+
+test("ignore: outside a git repository nothing is written", (t) => {
+  const root = temp(t);
+  assert.equal(ignoreFactory(root), "unchanged");
+  assert.ok(!existsSync(join(root, ".gitignore")));
+});
+
+test("constitution: lessons live in lessons/ and are committed", () => {
+  const text = readFileSync(new URL("../template/constitution.md", import.meta.url), "utf8");
+  const nine = text.split("### IX.")[1].split("### X.")[0];
+  assert.match(nine, /lessons\//);
+  assert.match(nine, /committed/);
+});
+
+test("secrets check names the place and the kind, never the value", (t) => {
+  const root = temp(t);
+  const fake = ["sk_live_", "a1b2c3d4e5f6g7h8i9j0k1l2"].join(""); // factory:allow-secret
+  writeFileSync(join(root, "config.js"), `const key = "${fake}";\n`);
+  const results = checkSecrets(root, { files: [join(root, "config.js")] });
+  const text = JSON.stringify(results);
+  assert.ok(text.includes("config.js:1"));
+  assert.ok(text.includes("Stripe live key"));
+  assert.ok(!text.includes(fake));
+});
+
+test("ignore: a Windows-style .gitignore is still migrated", (t) => {
+  const root = temp(t);
+  mkdirSync(join(root, ".git"), { recursive: true });
+  writeFileSync(join(root, ".gitignore"), "dist/\r\n# Software Factory\r\n.factory/\r\n");
+  assert.equal(ignoreFactory(root), "migrated");
+  const text = readFileSync(join(root, ".gitignore"), "utf8");
+  assert.ok(text.startsWith("dist/\r\n"));
+  assert.ok(text.includes(".factory/state.json"));
+  assert.ok(!/^\.factory\/\r?$/m.test(text));
 });
