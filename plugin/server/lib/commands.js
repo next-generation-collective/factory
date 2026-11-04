@@ -309,7 +309,10 @@ export async function specCommand(root, opts = {}, args = []) {
   if (!agentAvailable(config)) return noAgent(root, config, file);
 
   console.log(colors.bold(`Writing the spec: ${name}`));
-  runAgent(root, prompt, config, file);
+  if (runAgent(root, prompt, config, file).capped) {
+    console.error(colors.red("NOT DONE: the agent was stopped at the time cap; the spec is not finished."));
+    return 1;
+  }
 
   if (!written(abs)) {
     console.error(colors.red("The agent did not write a spec."));
@@ -364,7 +367,10 @@ export function planCommand(root, opts = {}) {
   if (!agentAvailable(config)) return noAgent(root, config, file);
 
   console.log(colors.bold(`Writing the plan: ${spec.name}`));
-  runAgent(root, prompt, config, file);
+  if (runAgent(root, prompt, config, file).capped) {
+    console.error(colors.red("NOT DONE: the agent was stopped at the time cap; the plan is not finished."));
+    return 1;
+  }
 
   if (!written(files.plan)) {
     console.error(colors.red("The agent did not write a plan."));
@@ -404,7 +410,10 @@ export function tasksCommand(root, opts = {}) {
   if (!agentAvailable(config)) return noAgent(root, config, file);
 
   console.log(colors.bold(`Writing the tasks: ${spec.name}`));
-  runAgent(root, prompt, config, file);
+  if (runAgent(root, prompt, config, file).capped) {
+    console.error(colors.red("NOT DONE: the agent was stopped at the time cap; the task list is not finished."));
+    return 1;
+  }
 
   if (!written(files.tasks)) {
     console.error(colors.red("The agent did not write a task list."));
@@ -713,10 +722,18 @@ function runJourneys(root, config, { artifacts }) {
   const guarded = info.driver !== "playwright" && isGitRepo(root);
   const before = guarded ? workingTreeFingerprint(root) : null;
   console.log(colors.bold(`Using the app: ${info.driver}${url ? ` at ${url}` : ""}`));
+  let tested;
   try {
-    runAgent(root, prompt, tester, promptFile);
+    tested = runAgent(root, prompt, tester, promptFile);
   } finally {
     app?.stop();
+  }
+
+  if (tested.capped) {
+    return finish(
+      { ...journeysResultNotRun(""), status: "fail", summary: "The tester was stopped at the time cap, so its journeys do not count" },
+      rel(root, dir),
+    );
   }
 
   if (guarded && workingTreeFingerprint(root) !== before) {
@@ -760,10 +777,11 @@ export function runReview(root, config, { artifacts, base, run }) {
   const promptFile = savePrompt(root, `review-${stamp()}`, prompt);
   const before = workingTreeFingerprint(root);
   console.log(colors.bold(`Independent review: ${reviewer.agent.command}, a separate session`));
-  runAgent(root, prompt, reviewer, promptFile);
+  const reviewedRun = runAgent(root, prompt, reviewer, promptFile);
 
   let problem = null;
-  if (workingTreeFingerprint(root) !== before) problem = "The reviewer changed files besides its review, so the review does not count";
+  if (reviewedRun.capped) problem = "The reviewer was stopped at the time cap, so the review does not count";
+  else if (workingTreeFingerprint(root) !== before) problem = "The reviewer changed files besides its review, so the review does not count";
   else if (!existsSync(file)) problem = "The reviewer wrote no review";
   const review = problem ? null : parseReview(readFileSync(file, "utf8"));
   if (review && !review.verdict) problem = "The review has no VERDICT line, so it does not count";
@@ -889,6 +907,7 @@ export function build(root, opts = {}) {
   const artifacts = spec?.state === "approved" ? spec.artifacts : null;
   const attempts = Math.max(1, Number(opts.attempts ?? 2) || 1);
   let failures = [];
+  let lastMinutes = 0;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const prompt = composeBuildPrompt(root, config, idea, failures, artifacts);
@@ -902,9 +921,23 @@ export function build(root, opts = {}) {
     }
 
     console.log(colors.bold(`Attempt ${attempt}/${attempts}: ${config.agent.command}`));
-    runAgent(root, prompt, config, file);
+    const built = runAgent(root, prompt, config, file);
+    // A builder stopped at the cap is a proven failure: the attempt can never end in
+    // DONE, whatever the checks say about the half-finished work.
+    const capped = built.capped
+      ? {
+          id: "agent-cap",
+          title: "Builder stopped at the time cap",
+          kind: "proven",
+          status: "fail",
+          summary: "The build ran past checks.agentMinutes and was stopped; the attempt is not finished.",
+          details: [],
+          evidence: [],
+        }
+      : null;
 
     const run = verify(root, { deep: true, config });
+    lastMinutes = run.minutes ?? 0;
     const testsAfter = countTests(root);
     const removed =
       testsAfter < testsBefore
@@ -932,12 +965,13 @@ export function build(root, opts = {}) {
       }));
     saveChanges(root, config, base);
     console.log(`\n${formatResults(root, run)}`);
+    if (capped) console.log(colors.red(`FAIL     ${capped.title}: ${capped.summary}`));
     if (removed) console.log(colors.red(`FAIL     ${removed.title}: ${removed.summary}`));
     for (const item of unmet) console.log(colors.red(`FAIL     ${item.summary}`));
     console.log("");
 
     let reviewed = null;
-    if (run.ok && !removed && !unmet.length) {
+    if (run.ok && !capped && !removed && !unmet.length) {
       if (artifacts) {
         const after = activeSpec(root);
         if (!after || after.state !== "approved") {
@@ -967,7 +1001,7 @@ export function build(root, opts = {}) {
       if (!reviewed || reviewed.passed) {
         writeState(root, { lastBuild: new Date().toISOString() });
         recordProven({ caught: attempt > 1 ? 1 : 0 });
-        send("prove", { mode: "cli", ok: true, attempts: attempt, caught: attempt > 1, verdict: reviewed ? "approve" : "none" }, PACKAGE_VERSION);
+        send("prove", { mode: "cli", ok: true, attempts: attempt, caught: attempt > 1, verdict: reviewed ? "approve" : "none", minutes: run.minutes ?? 0 }, PACKAGE_VERSION);
         console.log(colors.dim('Was it useful? Tell us in one line: factory feedback "..."'));
         console.log(colors.green(`DONE: the checks passed${reviewed ? " and a separate session approved the change" : ""}. Proof: ${rel(root, run.mdFile)}`));
         return 0;
@@ -975,6 +1009,7 @@ export function build(root, opts = {}) {
     }
 
     failures = run.results.filter((result) => result.kind === "proven" && result.status === "fail");
+    if (capped) failures.push(capped);
     if (removed) failures.push(removed);
     failures.push(...unmet);
     if (reviewed && !reviewed.passed) failures.push(reviewFailure(reviewed));
@@ -984,7 +1019,7 @@ export function build(root, opts = {}) {
   }
 
   console.log(colors.red("NOT DONE: the checks did not pass. Nothing was called done."));
-  send("prove", { mode: "cli", ok: false, attempts, failed: failures.map((f) => f.id).filter(Boolean) }, PACKAGE_VERSION);
+  send("prove", { mode: "cli", ok: false, attempts, failed: failures.map((f) => f.id).filter(Boolean), minutes: lastMinutes }, PACKAGE_VERSION);
   return 1;
 }
 
@@ -993,7 +1028,7 @@ export function checkCounts(run, extra = {}) {
   const checks = {};
   for (const result of run.results) checks[result.status] = (checks[result.status] ?? 0) + 1;
   const failed = run.results.filter((r) => r.status === "fail" || r.status === "look").map((r) => r.id).filter(Boolean);
-  return { ...extra, kind: run.kind, ok: run.ok, checks, failed };
+  return { ...extra, kind: run.kind, ok: run.ok, minutes: run.minutes ?? 0, checks, failed };
 }
 
 export function verifyCommand(root, opts = {}) {

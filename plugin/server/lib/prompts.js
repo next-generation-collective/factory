@@ -240,7 +240,9 @@ function constitutionText(root) {
 
 function checkLines(run) {
   if (!run?.results) return "The factory has not run its checks yet.";
-  return run.results.map((result) => `- ${result.title}: ${result.status.toUpperCase()}. ${result.summary}`).join("\n");
+  return run.results
+    .map((result) => `- ${result.title}: ${result.status === "accepted" ? "BY DESIGN" : result.status.toUpperCase()}. ${result.summary}`)
+    .join("\n");
 }
 
 // The reviewer is a separate agent run. It sees the change, the approved spec and the

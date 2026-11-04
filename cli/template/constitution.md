@@ -142,6 +142,13 @@ Every row has a reason. Starting points, by category:
 
 The list grows with each run: a baseline item testers report becomes a row here.
 
+### XI. Accepted, by design
+Some deviations are decisions, not defects. They live in `factory.config.json` under
+`accepted`: each entry names the check, what is accepted, the reason, an owner and a
+date. Consult the register before raising a finding: a valid entry is reported as
+"BY DESIGN" with its reason, never re-argued and never silently hidden. The secrets
+check can never be accepted.
+
 ## Known traps
 
 Checked in every plan and every review. Each one cost real time once.

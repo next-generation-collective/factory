@@ -11,7 +11,7 @@ import { analyseProject } from "./analyse.js";
 import { approvalView } from "./approval.js";
 import { firstName, fullName, isFirstVisit, rememberVisit } from "./banner.js";
 import { checkCounts, ensureConfig, report, runReview } from "./commands.js";
-import { feedbackUrl, guessFeeling, needsAnswer, recordProven, send as track, setSharing, sharing } from "./telemetry.js";
+import { feedbackUrl, flush, guessFeeling, needsAnswer, recordProven, send as track, setSharing, sharing } from "./telemetry.js";
 import { paths, readConfig, readState, writeState } from "./config.js";
 import { composeBuildPrompt, composeSpecPrompt } from "./prompts.js";
 import { isGitRepo, reviewBase } from "./review.js";
@@ -135,12 +135,14 @@ export const text = (body, isError = false) => ({ content: [{ type: "text", text
 // The slow tools. Each call runs in its own process (mcp-job.js), so the server keeps
 // answering ping, cancel and other calls while it works, and cancel can stop it.
 export const jobs = {
-  factory_check({ root, client }) {
+  async factory_check({ root, client }) {
     const analysis = analyseProject(root);
     if (analysis.empty) return text("No project found here. Open a project folder first.", true);
     const config = readConfig(root);
     const { value: run } = captured(() => verify(root, { deep: false, config, save: false }));
-    track("check", checkCounts(run, { mode: "mcp", client }), VERSION);
+    // Awaited (bounded to a moment, never a failure) so the count has left before the
+    // reply exists; synchronous work after this line can no longer starve the send.
+    await track("check", checkCounts(run, { mode: "mcp", client }), VERSION);
     const greeting = welcome();
     return text(
       [
@@ -156,7 +158,7 @@ export const jobs = {
     );
   },
 
-  factory_prove({ root, client }) {
+  async factory_prove({ root, client }) {
     const current = activeSpec(root);
     if (!current) return text("No job yet. Call factory_start first.", true);
     if (current.state !== "approved") return text(`The spec ${current.name} is ${current.state}. Get the person's approval with factory_approve.`, true);
@@ -167,15 +169,15 @@ export const jobs = {
     const notDone = readState(root).notDone ?? 0;
     if (!run.ok) {
       writeState(root, { notDone: notDone + 1 });
-      track("prove", { mode: "mcp", client, ok: false, attempts: notDone + 1, failed }, VERSION);
+      await track("prove", { mode: "mcp", client, ok: false, attempts: notDone + 1, failed, minutes: run.minutes ?? 0 }, VERSION);
       return text(["NOT DONE. Fix what failed, then call factory_prove again.", "", results].join("\n"));
     }
     recordProven({ caught: notDone > 0 ? 1 : 0 });
-    track("prove", { mode: "mcp", client, ok: true, attempts: notDone + 1, caught: notDone > 0 }, VERSION);
+    await track("prove", { mode: "mcp", client, ok: true, attempts: notDone + 1, caught: notDone > 0, minutes: run.minutes ?? 0 }, VERSION);
     return text(["DONE: the checks passed.", "", results, "", "Now call factory_review for the independent review."].join("\n"));
   },
 
-  factory_review({ root, client }) {
+  async factory_review({ root, client }) {
     if (!isGitRepo(root)) return text("The independent review needs git, to know what changed.", true);
     const current = activeSpec(root);
     const config = readConfig(root);
@@ -191,7 +193,7 @@ export const jobs = {
         `The independent review did not run: no second AI is installed on this computer (it uses ${config.agent?.command ?? "claude"}). Tell the person the change passed the checks but has no independent review. ${reportText}`,
       );
     }
-    track("review", { mode: "mcp", client, verdict: result.passed ? "approve" : "changes" }, VERSION);
+    await track("review", { mode: "mcp", client, verdict: result.passed ? "approve" : "changes" }, VERSION);
     const verdict = result.passed
       ? "Proven by Next-Gen: the checks passed and a separate session approved the change.\nAfter reporting, ask the person once: was the factory useful this time? If they say anything, offer factory_feedback."
       : `NOT DONE: ${result.summary}`;
@@ -340,7 +342,8 @@ export function createServer({ root = process.cwd(), send, home, runJob = forkJo
       }
 
       const approval = approve(root, name, fullName(), how);
-      track("approve", { mode: "mcp", client, via: how.via === "chat" ? "chat" : "box" }, VERSION);
+      // Awaited so the blocking git call below cannot starve the send past its abort.
+      await track("approve", { mode: "mcp", client, via: how.via === "chat" ? "chat" : "box" }, VERSION);
       setActive(root, name);
       const head = isGitRepo(root) ? spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout?.trim() : null;
       writeState(root, { buildBase: head || null, buildStartedAt: new Date().toISOString() });
@@ -462,5 +465,6 @@ export async function serve(version, root = process.cwd()) {
     server.handle(message);
   }
   await server.idle();
+  await flush();
   return 0;
 }

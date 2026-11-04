@@ -3,18 +3,19 @@ import { join } from "node:path";
 import { colors, rel } from "./util.js";
 import { ensure, paths, readConfig, writeState } from "./config.js";
 import { detectStack } from "./detect.js";
-import { runChecks } from "./checks.js";
+import { acceptedRegister, runChecks } from "./checks.js";
 import { SPECS_DIR } from "./spec.js";
 
 export function label(result) {
   if (result.status === "na") return "N/A";
   if (result.status === "not-run") return "NOT RUN";
+  if (result.status === "accepted") return "BY DESIGN";
   if (result.status === "pass") return result.kind === "flagged" ? "OK" : "PASS";
   return result.kind === "flagged" ? "LOOK" : "FAIL";
 }
 
 export function paintLabel(result) {
-  const text = label(result).padEnd(8);
+  const text = label(result).padEnd(9);
   if (result.status === "fail" && result.kind === "proven") return colors.red(text);
   if (result.status === "fail") return colors.yellow(text);
   if (result.status === "pass") return colors.green(text);
@@ -38,15 +39,20 @@ export function verify(root, { deep = false, config, save = true } = {}) {
   if (stack.kind === "other" && cfg.kind && cfg.kind !== "other") stack.kind = cfg.kind;
   const p = paths(root);
   const logDir = save ? ensure(root).evidence : null;
+  const started = Date.now();
   const results = runChecks(root, { deep, config: cfg, stack, logDir });
+  const minutes = Math.max(0, Math.round((Date.now() - started) / 60000));
+  const notes = acceptedRegister(cfg).notes;
   const ok = !results.some((result) => result.kind === "proven" && result.status === "fail");
   const at = new Date().toISOString();
   const result = {
     at,
     deep,
     ok,
+    minutes,
     project: cfg.name,
     kind: stack.kind,
+    notes,
     results,
   };
   if (!save) return { ...result, saved: false, jsonFile: null, mdFile: null };
@@ -91,6 +97,7 @@ export function renderEvidence(root, run) {
     ...run.results.map(
       (result) => `| ${result.title} | ${label(result)} | ${result.kind} | ${result.summary} |`,
     ),
+    ...(run.notes?.length ? ["", ...run.notes.map((note) => `> ${note}`)] : []),
     "",
     "## Details",
     "",
@@ -132,6 +139,7 @@ export function formatResults(root, run, { header = true } = {}) {
       for (const detail of result.details.slice(0, 4)) lines.push(colors.dim(`             ${detail}`));
     }
   }
+  for (const note of run.notes ?? []) lines.push(colors.yellow(`  ${note}`));
 
   const failed = run.results.filter((result) => result.kind === "proven" && result.status === "fail");
   const look = run.results.filter((result) => result.kind === "flagged" && result.status === "fail");

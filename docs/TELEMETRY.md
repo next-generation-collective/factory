@@ -35,9 +35,11 @@ only your answer. To change it later, just tell your AI: *"stop sharing with Nex
 | Check results as counts, and which checks failed | `{"pass":5,"fail":1}`, `["tests"]` | To know what the factory catches |
 | The kind of feedback you gave, if you used `factory feedback` | `loved`, `false-alarm`, `confusing`, `wish` | To see what to fix first; your words go only to the GitHub form you submit |
 | How a job ended | done or not, attempts, whether a mistake was caught, review verdict, approval by box or chat | To know if it helps |
+| How long the checks took, in whole minutes | `0`, `12` | To see when a run drags on and bound it |
 
 Anything else is dropped on your computer before sending, by `cli/lib/telemetry.js`, which
-you can read.
+you can read. The same counts, under the same yes, are sent whether you use the command
+line or an AI tool such as Claude Code; the AI-tool path sends nothing extra.
 
 ## Never asked, never shared
 

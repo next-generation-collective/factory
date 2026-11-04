@@ -25,7 +25,7 @@ const BIG = "x".repeat(200000);
 test("agent: with no placeholder the prompt goes on stdin, however long", (t) => {
   const root = temp(t);
   const script = 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>require("fs").writeFileSync("got.txt",String(d.length)))';
-  const ok = runAgent(root, BIG, { agent: { command: process.execPath, args: ["-e", script] } });
+  const { ok } = runAgent(root, BIG, { agent: { command: process.execPath, args: ["-e", script] } });
   assert.equal(ok, true);
   assert.equal(readFileSync(join(root, "got.txt"), "utf8"), String(BIG.length));
 });
@@ -34,7 +34,7 @@ test("agent: {promptFile} is replaced with the saved prompt's path", (t) => {
   const root = temp(t);
   write(root, "prompt.md", "hello");
   const script = 'require("fs").writeFileSync("got.txt", require("fs").readFileSync(process.argv[1], "utf8"))';
-  const ok = runAgent(root, "hello", { agent: { command: process.execPath, args: ["-e", script, "{promptFile}"] } }, join(root, "prompt.md"));
+  const { ok } = runAgent(root, "hello", { agent: { command: process.execPath, args: ["-e", script, "{promptFile}"] } }, join(root, "prompt.md"));
   assert.equal(ok, true);
   assert.equal(readFileSync(join(root, "got.txt"), "utf8"), "hello");
 });
@@ -53,7 +53,7 @@ test("agent: a command with shell syntax is refused", () => {
   assert.equal(safeCommand("C:\\Program Files\\nodejs\\node.exe"), true);
   assert.equal(safeCommand("claude; rm -rf ~"), false);
   assert.equal(safeCommand("$(evil)"), false);
-  assert.equal(runAgent(process.cwd(), "x", { agent: { command: "claude && evil", args: [] } }), false);
+  assert.equal(runAgent(process.cwd(), "x", { agent: { command: "claude && evil", args: [] } }).ok, false);
 });
 
 test("agents: known agents get their settings from the command alone", () => {

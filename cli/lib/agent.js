@@ -82,17 +82,19 @@ export function agentInvocation(args, prompt, promptFile) {
   };
 }
 
+// Returns { ok, capped }. A capped run was stopped at checks.agentMinutes: it is never
+// ok, and every caller must fail its step instead of carrying on as if it finished.
 export function runAgent(root, prompt, config, promptFile) {
   const command = config.agent.command;
   if (!safeCommand(command)) {
     console.error(`Refusing to run agent.command "${command}": use the program's name or path only.`);
-    return false;
+    return { ok: false, capped: false };
   }
 
   const call = agentInvocation(config.agent.args, prompt, promptFile);
   if (call.inline && WINDOWS) {
     console.error("{prompt} in agent.args does not work on Windows. Remove it and the prompt goes on stdin.");
-    return false;
+    return { ok: false, capped: false };
   }
   if (call.inline && prompt.length > INLINE_LIMIT) {
     console.error(
@@ -112,8 +114,16 @@ export function runAgent(root, prompt, config, promptFile) {
     options.stdio = ["inherit", out, "inherit"];
   }
   const args = shell ? call.args.map(quoteForWindows) : call.args;
+  // A run that drags on is stopped at the cap and reported as not finished, never as
+  // passed. checks.agentMinutes in factory.config.json moves the cap.
+  const minutes = Number(config?.checks?.agentMinutes ?? 30);
+  if (minutes > 0) options.timeout = minutes * 60 * 1000;
   const run = spawnSync(file, args, options);
-  return run.status === 0;
+  if (run.error?.code === "ETIMEDOUT" || (minutes > 0 && run.status === null && run.signal)) {
+    console.error(`The agent was stopped at the ${minutes} minute cap (checks.agentMinutes); the run is not finished.`);
+    return { ok: false, capped: true };
+  }
+  return { ok: run.status === 0, capped: false };
 }
 
 export function savePrompt(root, name, prompt) {

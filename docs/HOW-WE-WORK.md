@@ -111,6 +111,13 @@ log or recording in the spec's `evidence/` folder.
 When a run fails, first decide whether the app or the test is wrong. Record the evidence
 before fixing anything.
 
+Some deviations are decisions, not defects. Record them once in `factory.config.json`
+under `accepted`: each entry names the check (for example `offline` or `personal`), what
+is accepted, the reason, an owner and a date. The checks then report "BY DESIGN" with
+that reason instead of a warning, visibly, on every run; remove the entry to run the
+check again. The secrets check can never be accepted. Long agent runs are stopped at a
+cap (`checks.agentMinutes`, 30 by default) and reported as not finished.
+
 ### 8. Review independently
 
 A fresh person or a fresh AI session reads the actual change, not the summary. They send it

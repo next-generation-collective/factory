@@ -437,18 +437,65 @@ export function checkPersonalData(root, { files } = {}) {
   return bad("personal", "Personal data", "flagged", clauses.join("; "), details);
 }
 
+// Decisions a human recorded on purpose. Checks named in factory.config.json's
+// "accepted" list report the recorded decision instead of a warning: visible in every
+// report, never silently hidden. The secrets check can never be accepted. An entry
+// without a check, a reason or an owner is ignored, and a note says so.
+export function acceptedRegister(config) {
+  const entries = Array.isArray(config?.accepted) ? config.accepted : [];
+  const valid = new Map();
+  const notes = [];
+  for (const entry of entries) {
+    const check = String(entry?.check ?? "").trim();
+    const reason = String(entry?.reason ?? "").trim();
+    const owner = String(entry?.owner ?? "").trim();
+    if (!check || !reason || !owner) {
+      notes.push(`Accepted entry ignored (${check || "no check named"}): it needs check, reason and owner.`);
+      continue;
+    }
+    if (check === "secrets") {
+      notes.push("Accepted entry ignored: the secrets check cannot be accepted by design.");
+      continue;
+    }
+    valid.set(check, { check, what: String(entry?.what ?? "").trim(), reason, owner, date: String(entry?.date ?? "").trim() });
+  }
+  return { valid, notes };
+}
+
+function applyAccepted(results, register) {
+  if (!register.valid.size) return results;
+  return results.map((result) => {
+    const entry = register.valid.get(result.id);
+    if (!entry || result.status === "na") return result;
+    const who = [entry.owner, entry.date].filter(Boolean).join(", ");
+    return {
+      ...result,
+      status: "accepted",
+      summary: `skipped, by design: ${entry.reason} (${who})`,
+      details: [
+        ...(entry.what ? [`Accepted: ${entry.what}`] : []),
+        "Recorded in factory.config.json under accepted; remove the entry to run this check again.",
+        `Without the entry this check said: ${result.summary}`,
+      ],
+    };
+  });
+}
+
 export function runChecks(root, { deep = false, config, stack, logDir = null } = {}) {
   const s = stack ?? detectStack(root);
   const cfg = config ?? readConfig(root);
   const files = walk(root);
   const ctx = { deep, stack: s, config: cfg, logDir, files };
-  return [
-    ...checkSecrets(root, ctx),
-    checkTestQuality(root, ctx),
-    checkTests(root, ctx),
-    checkBuild(root, ctx),
-    checkWeight(root, ctx),
-    checkPersonalData(root, ctx),
-    checkOffline(root, { kind: s.kind, config: cfg, files }),
-  ];
+  return applyAccepted(
+    [
+      ...checkSecrets(root, ctx),
+      checkTestQuality(root, ctx),
+      checkTests(root, ctx),
+      checkBuild(root, ctx),
+      checkWeight(root, ctx),
+      checkPersonalData(root, ctx),
+      checkOffline(root, { kind: s.kind, config: cfg, files }),
+    ],
+    acceptedRegister(cfg),
+  );
 }
