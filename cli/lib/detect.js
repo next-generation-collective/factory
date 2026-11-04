@@ -116,6 +116,12 @@ export function findWorkspaces(root, pkg) {
 
 const PRIMARY_ORDER = ["mobile", "web", "api", "cli", "script"];
 
+// Work with a screen gets the full states ritual; everything else gets the states that
+// actually exist for it, and an honest list of what cannot be checked.
+export function hasScreens(kind) {
+  return kind === "web" || kind === "mobile";
+}
+
 export function detectStack(root) {
   const pkg = existsSync(join(root, "package.json")) ? readJson(join(root, "package.json")) : null;
   const scripts = pkg?.scripts ?? {};

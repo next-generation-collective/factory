@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { section } from "./approval.js";
 import { paths } from "./config.js";
+import { detectStack, hasScreens } from "./detect.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATES = join(HERE, "..", "template");
@@ -51,12 +52,40 @@ function personBlock(answers) {
     : "The person skipped the questions. Decide, and record every assumption you make.";
 }
 
+// The kind the checks use: detection first, the person's config when detection says "other".
+export function projectKind(root, config) {
+  const detected = detectStack(root).kind;
+  return detected === "other" && config?.kind && config.kind !== "other" ? config.kind : detected;
+}
+
+const REDUCED_STATES = `## States
+
+This stack has no screens, so the UI states (dark mode, small screen, screen reader,
+back or cancel) do not apply to this stack. Answer each of these, or write "n/a" and why.
+
+| State | What happens |
+|---|---|
+| Loading or feedback | |
+| Empty input | |
+| Error | |
+| Run twice | |
+| No permission | |
+
+Covered: [the states this spec answers]; n/a: [state (reason), ...]`;
+
+// Web and phone work answers the full states table. A service, a command line tool, a
+// script or an unrecognised stack answers only the states that exist for it.
+function fitStates(template, kind) {
+  if (hasScreens(kind)) return template;
+  return template.replace(/## States[\s\S]*?(?=\n## )/, `${REDUCED_STATES}\n\n`);
+}
+
 const QUICK_LANE = `This is a small fix. Keep the spec short: Problem, What must never break, Acceptance
 checks (each with its Proof:), Assumptions, Out of scope. Answer States and Expected baseline
 only if the fix changes what a person sees; otherwise write one line saying so.`;
 
 export function composeSpecPrompt(root, config, title, target, context = {}) {
-  const template = readTemplate(root, "spec.md");
+  const template = fitStates(readTemplate(root, "spec.md"), projectKind(root, config));
   const brief = context.analysis?.brief?.trim() || "No project files were found.";
   return `You are the Planner for "${config.name}".
 

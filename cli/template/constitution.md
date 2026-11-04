@@ -51,7 +51,12 @@ rungs 1 to 6 failed. Code with no licence, or a GPL/AGPL licence, is never reuse
 the user's explicit agreement.
 
 ### VII. Every state is designed, and every "done" is tested
-Quality is decided in the spec, not discovered in QA. For each screen or feature a spec
+Quality is decided in the spec, not discovered in QA. The full states table below applies
+to work with a screen (web and phone). Work without one (a service, a command line tool,
+a script, or an unrecognised stack) answers only the states that exist for it: loading or
+feedback, empty input, error, run twice, and no permission, plus the shared states when
+more than one person is involved. Never claim a state, or a check, that does not exist on
+the stack. For each screen or feature a spec
 says what the user sees and can do in each of these states, or marks it "not applicable"
 with a reason:
 

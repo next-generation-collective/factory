@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { colors, rel } from "./util.js";
 import { ensure, paths, readConfig, writeState } from "./config.js";
-import { detectStack } from "./detect.js";
+import { detectStack, hasScreens } from "./detect.js";
 import { acceptedRegister, runChecks } from "./checks.js";
 import { SPECS_DIR } from "./spec.js";
 
@@ -43,6 +43,15 @@ export function verify(root, { deep = false, config, save = true } = {}) {
   const results = runChecks(root, { deep, config: cfg, stack, logDir });
   const minutes = Math.max(0, Math.round((Date.now() - started) / 60000));
   const notes = acceptedRegister(cfg).notes;
+  // Honesty about blind spots: on stacks without screens, say plainly what no check here
+  // can see, instead of pretending the web ritual covered it.
+  const cannotCheck = hasScreens(stack.kind)
+    ? []
+    : [
+        "download weight: there is no website build to weigh",
+        "offline behaviour: there is no browser or service worker here",
+        "on-screen states: dark mode, small screens and screen readers do not exist on this stack, and nothing visual was checked",
+      ];
   const ok = !results.some((result) => result.kind === "proven" && result.status === "fail");
   const at = new Date().toISOString();
   const result = {
@@ -53,6 +62,7 @@ export function verify(root, { deep = false, config, save = true } = {}) {
     project: cfg.name,
     kind: stack.kind,
     notes,
+    cannotCheck,
     results,
   };
   if (!save) return { ...result, saved: false, jsonFile: null, mdFile: null };
@@ -115,6 +125,12 @@ export function renderEvidence(root, run) {
     }
   }
 
+  if (run.cannotCheck?.length) {
+    lines.push("## On this stack the factory cannot check", "");
+    for (const item of run.cannotCheck) lines.push(`- ${item}`);
+    lines.push("");
+  }
+
   lines.push(
     "## What this does not prove",
     "",
@@ -140,6 +156,10 @@ export function formatResults(root, run, { header = true } = {}) {
     }
   }
   for (const note of run.notes ?? []) lines.push(colors.yellow(`  ${note}`));
+  if (run.cannotCheck?.length) {
+    lines.push(colors.dim("  On this stack the factory cannot check:"));
+    for (const item of run.cannotCheck) lines.push(colors.dim(`    - ${item}`));
+  }
 
   const failed = run.results.filter((result) => result.kind === "proven" && result.status === "fail");
   const look = run.results.filter((result) => result.kind === "flagged" && result.status === "fail");
