@@ -48,7 +48,7 @@ export function defaultConfig(root) {
     checks: {
       budgetKb: 1500,
       maxFileKb: 700,
-      timeoutMinutes: 10,
+      timeoutMinutes: 3,
     },
     createdAt: new Date().toISOString(),
   };

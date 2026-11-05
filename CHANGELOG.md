@@ -2,6 +2,34 @@
 
 Newest first. Dates are YYYY-MM-DD.
 
+## 0.6.0 (2026-11-05, in the Claude Code plugin)
+
+A factory job now costs far fewer AI tokens, which matters most if you pay for them
+yourself. Nothing got less thorough: every check, test and human approval stays, and
+anything that ran lighter is written into the evidence.
+
+### Added
+
+- A small route. A request that says it is tiny (a typo, a rename, a label) gets a
+  half-page spec instead of the full template. Anything that mentions logins, payments,
+  passwords or personal data never qualifies. A small job that ends up touching more than
+  2 files, or a dependency file, is upgraded to a full job, on the record in the evidence.
+- The prove loop stops itself after 3 failed rounds in a row instead of running until you
+  give up, and says so in the evidence. A passing round resets the count; approving the
+  spec again restarts the loop.
+
+### Changed
+
+- Each stage now receives only the constitution sections it works by (the planner reads
+  Core Principles; the builder gets Known traps and Workflow; the reviewer gets Known
+  traps, Release gate and Launch Readiness) instead of every stage re-reading the whole
+  file. The constitution file itself is unchanged.
+- In an AI tool, a spec the same session already wrote is referenced by its path instead
+  of being pasted back in full. A fresh session still gets the full text.
+- A single check now gets 3 minutes by default instead of 10, so a stuck probe cannot run
+  half an hour. Projects with slower tests raise it with `checks.timeoutMinutes` in
+  `factory.config.json`.
+
 ## 0.5.1 (2026-10-27, in the Claude Code plugin)
 
 ### Fixed

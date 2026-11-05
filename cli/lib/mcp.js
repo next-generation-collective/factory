@@ -3,7 +3,7 @@
 // The person talks to their AI as usual; the AI uses these tools, and the factory keeps the
 // same rules as on the command line: a person approves, the checks decide, proof is kept.
 import { fork, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ import { firstName, fullName, isFirstVisit, rememberVisit } from "./banner.js";
 import { checkCounts, ensureConfig, report, runReview } from "./commands.js";
 import { feedbackUrl, flush, guessFeeling, needsAnswer, recordProven, send as track, setSharing, sharing } from "./telemetry.js";
 import { paths, readConfig, readState, writeState } from "./config.js";
+import { exceedsSmall, requestLane } from "./lane.js";
 import { composeBuildPrompt, composeSpecPrompt } from "./prompts.js";
 import { isGitRepo, reviewBase } from "./review.js";
 import { activeSpec, approve, findSpec, nextSpecName, setActive } from "./spec.js";
@@ -132,6 +133,35 @@ function welcome() {
 
 export const text = (body, isError = false) => ({ content: [{ type: "text", text: body }], ...(isError ? { isError: true } : {}) });
 
+// Anything that changes how thorough a run was goes in the evidence folder, so a person
+// reading it later sees it: nothing is silently thinner.
+function noteEvidence(root, file, body) {
+  const evidence = paths(root).evidence;
+  mkdirSync(evidence, { recursive: true });
+  writeFileSync(join(evidence, file), `${body}\n`);
+}
+
+// A job on the small route that touched more files than the small limits allow, or a
+// dependency file, becomes a full job, and the evidence says so.
+export function upgradeIfGrown(root, state, name) {
+  if (state.lane !== "quick" || !state.buildBase || !isGitRepo(root)) return null;
+  // Changed files since the build began, including brand-new ones git diff leaves out.
+  // The factory's own records (.factory, the spec folders) are not part of the change.
+  const NOT_THE_CHANGE = ["--", ".", ":(exclude).factory", ":(exclude)specs"];
+  const diff = spawnSync("git", ["diff", "--name-only", state.buildBase, ...NOT_THE_CHANGE], { cwd: root, encoding: "utf8" });
+  const fresh = spawnSync("git", ["ls-files", "--others", "--exclude-standard", ...NOT_THE_CHANGE], { cwd: root, encoding: "utf8" });
+  const files = [...new Set(`${diff.stdout ?? ""}\n${fresh.stdout ?? ""}`.split("\n").map((f) => f.trim()).filter(Boolean))];
+  if (!exceedsSmall(files)) return null;
+  const why = `${files.length} files changed`;
+  writeState(root, { lane: "full" });
+  noteEvidence(
+    root,
+    `${name}-upgraded.md`,
+    `# Upgraded from the small route\n\n- Spec: ${name}\n- Date: ${new Date().toISOString().slice(0, 10)}\n- Why: ${why} (small allows at most 2 and no dependency files)\n- Files:\n${files.map((f) => `  - ${f}`).join("\n")}`,
+  );
+  return why;
+}
+
 // The slow tools. Each call runs in its own process (mcp-job.js), so the server keeps
 // answering ping, cancel and other calls while it works, and cancel can stop it.
 export const jobs = {
@@ -163,18 +193,53 @@ export const jobs = {
     if (!current) return text("No job yet. Call factory_start first.", true);
     if (current.state !== "approved") return text(`The spec ${current.name} is ${current.state}. Get the person's approval with factory_approve.`, true);
     const config = readConfig(root);
+    const state = readState(root);
+
+    // Three failed rounds is the limit. Past that, more rounds burn the person's tokens
+    // on the same hole; the person decides what happens next, not the loop.
+    const STOP_AFTER = 3;
+    const stopMessage = [
+      `STOPPED: the checks failed ${STOP_AFTER} rounds in a row.`,
+      "Do not fix or call factory_prove again. Show the person what still fails (in .factory/last-verify.json and the logs in .factory/evidence) and let them decide.",
+      "The loop resets when the spec is approved again.",
+    ].join("\n");
+    if ((state.notDone ?? 0) >= STOP_AFTER) return text(stopMessage);
+
+    // A job that started on the small route but outgrew it is upgraded, on the record.
+    const upgraded = upgradeIfGrown(root, state, current.name);
+
     const { value: run } = captured(() => verify(root, { deep: true, config, save: true }));
     const results = formatResults(root, run, { header: false });
     const failed = run.results.filter((r) => r.kind === "proven" && r.status === "fail").map((r) => r.id).filter(Boolean);
-    const notDone = readState(root).notDone ?? 0;
+    const notDone = state.notDone ?? 0;
+    const grewLine = upgraded ? `This job grew beyond the small route (${upgraded}); it is a full job now, on the record in .factory/evidence.\n` : "";
     if (!run.ok) {
       writeState(root, { notDone: notDone + 1 });
       await track("prove", { mode: "mcp", client, ok: false, attempts: notDone + 1, failed, minutes: run.minutes ?? 0 }, VERSION);
-      return text(["NOT DONE. Fix what failed, then call factory_prove again.", "", results].join("\n"));
+      if (notDone + 1 >= STOP_AFTER) {
+        noteEvidence(
+          root,
+          `${current.name}-stopped.md`,
+          `# Prove loop stopped at the cap\n\n- Spec: ${current.name}\n- Date: ${new Date().toISOString().slice(0, 10)}\n- Why: the checks failed ${STOP_AFTER} rounds in a row; the person decides what happens next.\n- Still failing: ${failed.join(", ") || "see .factory/last-verify.json"}`,
+        );
+        return text([grewLine + stopMessage, "", results].join("\n"));
+      }
+      return text([`${grewLine}NOT DONE. Fix what failed, then call factory_prove again.`, "", results].join("\n"));
     }
     recordProven({ caught: notDone > 0 ? 1 : 0 });
+    // A passing round resets the stop counter: only consecutive failures stop the loop.
+    writeState(root, { notDone: 0 });
+    // A job that finished on the short route says so in the evidence: the shorter
+    // prompts are on the record, and every check still ran in full.
+    if (readState(root).lane === "quick") {
+      noteEvidence(
+        root,
+        `${current.name}-small-route.md`,
+        `# Ran on the small route\n\n- Spec: ${current.name}\n- Date: ${new Date().toISOString().slice(0, 10)}\n- What was shorter: the spec template and the stage prompts.\n- What was not: every check, test and build ran in full, and the person approved the spec.`,
+      );
+    }
     await track("prove", { mode: "mcp", client, ok: true, attempts: notDone + 1, caught: notDone > 0, minutes: run.minutes ?? 0 }, VERSION);
-    return text(["DONE: the checks passed.", "", results, "", "Now call factory_review for the independent review."].join("\n"));
+    return text([`${grewLine}DONE: the checks passed.`, "", results, "", "Now call factory_review for the independent review."].join("\n"));
   },
 
   async factory_review({ root, client }) {
@@ -248,6 +313,9 @@ export function createServer({ root = process.cwd(), send, home, runJob = forkJo
   const running = new Map();
   const startedIn = root;
   let rootsReady = Promise.resolve();
+  // Specs this session has already sent or had written by the AI; those are referenced by
+  // path instead of pasted again. A new session starts empty and gets full text once.
+  const specsThisSession = new Set();
 
   const ask = (method, params) =>
     new Promise((resolveAnswer) => {
@@ -292,8 +360,10 @@ export function createServer({ root = process.cwd(), send, home, runJob = forkJo
       const target = `specs/${name}/spec.md`;
       mkdirSync(join(root, "specs", name), { recursive: true });
       setActive(root, name);
-      const prompt = composeSpecPrompt(root, config, job, target, { analysis: analyseProject(root), answers: {} });
-      writeState(root, { notDone: 0 });
+      const lane = requestLane(job);
+      const prompt = composeSpecPrompt(root, config, job, target, { analysis: analyseProject(root), answers: {}, lane });
+      writeState(root, { notDone: 0, lane });
+      specsThisSession.add(name);
       track("job_start", { mode: "mcp", client, kind: config.kind }, VERSION);
       const greeting = welcome();
       return text(
@@ -346,14 +416,17 @@ export function createServer({ root = process.cwd(), send, home, runJob = forkJo
       await track("approve", { mode: "mcp", client, via: how.via === "chat" ? "chat" : "box" }, VERSION);
       setActive(root, name);
       const head = isGitRepo(root) ? spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout?.trim() : null;
-      writeState(root, { buildBase: head || null, buildStartedAt: new Date().toISOString() });
+      writeState(root, { buildBase: head || null, buildStartedAt: new Date().toISOString(), notDone: 0 });
       const artifacts = activeSpec(root)?.artifacts;
+      // The AI that wrote the spec this session already has it; a fresh session gets the full text.
+      const alreadySent = specsThisSession.has(name);
+      specsThisSession.add(name);
       return text(
         [
           `Approved by ${approval.approvedBy} (${how.via}). Editing the spec now cancels the approval.`,
           "Build it now, following these rules. Then call factory_prove.",
           "",
-          composeBuildPrompt(root, config, "", [], artifacts),
+          composeBuildPrompt(root, config, "", [], artifacts, { alreadySent }),
         ].join("\n"),
       );
     },
