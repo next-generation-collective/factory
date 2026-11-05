@@ -155,7 +155,7 @@ export function checkSecrets(root, { files } = {}) {
 const COULD_NOT_RUN =
   /command not found|is not recognized as an internal or external command|No module named pytest|ENOENT|not found: (?:yarn|pnpm|bun|npm|uv|poetry)/i;
 
-export function runCommand(root, command, logName, { cwd = null, logDir = null, timeoutMinutes = 10 } = {}) {
+export function runCommand(root, command, logName, { cwd = null, logDir = null, timeoutMinutes = 3 } = {}) {
   const dir = logDir ?? join(tmpdir(), "factory-logs");
   mkdirSync(dir, { recursive: true });
   const log = join(dir, logName);
@@ -194,7 +194,7 @@ function commandCheck(root, { deep, stack, config, logDir }, { id, title, comman
   if (!command) return na(id, title, "proven", `No ${id === "tests" ? "test" : "build"} command found`);
   if (!deep) return notRun(id, title, "proven", "factory verify --deep runs it");
 
-  const minutes = config?.checks?.timeoutMinutes ?? 10;
+  const minutes = config?.checks?.timeoutMinutes ?? 3;
   const run = runCommand(root, command, logName, { cwd: stack.commandCwd, logDir, timeoutMinutes: minutes });
   const where = stack.commandCwd ? ` in ${stack.commandCwd}` : "";
   if (run.status === 0) return ok(id, title, "proven", `\`${command}\`${where} passed`, [], [run.log]);

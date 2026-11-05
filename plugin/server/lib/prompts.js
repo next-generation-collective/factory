@@ -84,15 +84,78 @@ const QUICK_LANE = `This is a small fix. Keep the spec short: Problem, What must
 checks (each with its Proof:), Assumptions, Out of scope. Answer States and Expected baseline
 only if the fix changes what a person sees; otherwise write one line saying so.`;
 
+// The whole template a small job gets. The full template never ships on the quick lane.
+const QUICK_TEMPLATE = `# [What changes, in a few words]
+
+- Spec: \`[NNN-name]\`
+- Date: [YYYY-MM-DD]
+- Job, as the person said it: "[the one line]"
+
+## Problem
+
+[What is wrong today, in one or two sentences.]
+
+## What must never break
+
+- [The thing someone would be called about.]
+
+## Acceptance checks
+
+- [ ] AC1 [what is true] Proof: [the test or command that shows it, and where it looks]
+
+## Assumptions
+
+Assumed: [anything decided without the person; they read these before approving]
+
+## Out of scope
+
+[What this fix deliberately does not touch. If the fix changes what a person sees, add a
+States line and an Expected baseline line here; otherwise say it changes nothing visible.]`;
+
+// Each stage gets only the constitution sections it works by, never the whole file.
+// The file on disk stays whole; this only decides what is sent when. The planning
+// stages point at their one section (read once per job); the stages that repeat in
+// the prove loop get their short sections pasted in, so nothing is re-read.
+// Every rule section reaches a stage: Core Principles to the planning stages, Known traps
+// and Workflow to the builder, Known traps, Release gate and Launch Readiness to the
+// reviewer. Only Governance (how the constitution itself changes) goes to no stage,
+// deliberately: it governs people, not jobs.
+const STAGE_SECTIONS = {
+  spec: { read: ["Core Principles"] },
+  plan: { read: ["Core Principles"] },
+  tasks: {},
+  build: { inline: ["Known traps", "Workflow"] },
+  review: { inline: ["Known traps", "Release gate", "Launch Readiness"] },
+};
+
+export function stageRules(root, stage) {
+  const { read = [], inline = [] } = STAGE_SECTIONS[stage] ?? {};
+  const pieces = [];
+  if (read.length) {
+    pieces.push(
+      `Read only the ${read.map((h) => `"${h}"`).join(" and ")} section of \`.factory/constitution.md\` (it wins over this prompt). Skip the rest of that file.`,
+    );
+  }
+  const whole = inline.length ? constitutionText(root) : "";
+  for (const heading of inline) {
+    const body = section(whole, heading);
+    if (body) pieces.push(`### ${heading}\n\n${body}`);
+  }
+  if (!pieces.length) return "";
+  return `## The rules for this stage\n\nFrom \`.factory/constitution.md\`; they win over this prompt. Do not read the whole file.\n\n${pieces.join("\n\n")}`;
+}
+
 export function composeSpecPrompt(root, config, title, target, context = {}) {
-  const template = fitStates(readTemplate(root, "spec.md"), projectKind(root, config));
+  const quick = context.lane === "quick";
+  const template = quick ? QUICK_TEMPLATE : fitStates(readTemplate(root, "spec.md"), projectKind(root, config));
   const brief = context.analysis?.brief?.trim() || "No project files were found.";
   return `You are the Planner for "${config.name}".
 
 Read these before you write anything:
-- .factory/constitution.md (the rules; they win over this prompt)
 - factory.config.json (what this project is, who depends on it, what must never break)
 - the code this job touches
+
+${stageRules(root, "spec")}
 
 ## What the repo already shows
 
@@ -112,7 +175,7 @@ ${title}
 
 Fill every section of this template from the repo and the job line. Replace every
 placeholder.
-${context.lane === "quick" ? `\n${QUICK_LANE}\n` : ""}
+${quick ? `\n${QUICK_LANE}\n` : ""}
 ${template}
 
 ## Rules
@@ -139,7 +202,9 @@ export function composePlanPrompt(root, config, name, specText, target) {
   const template = readTemplate(root, "plan.md");
   return `You are the Planner for "${config.name}".
 
-Read \`.factory/constitution.md\` and \`factory.config.json\` first.
+Read \`factory.config.json\` first.
+
+${stageRules(root, "plan")}
 
 ## The approved spec
 
@@ -175,8 +240,6 @@ export function composeTasksPrompt(root, config, name, specText, planText, targe
   const template = readTemplate(root, "tasks.md");
   return `You are the Planner for "${config.name}".
 
-Read \`.factory/constitution.md\` first.
-
 ## The approved spec
 
 ${specText}
@@ -208,7 +271,12 @@ ${template}
 `;
 }
 
-export function composeBuildPrompt(root, config, idea, failures, artifacts) {
+// When the same session already holds an artifact (it wrote the spec minutes ago), the
+// factory sends the path, not the text again. A fresh session still gets the full text.
+const haveIt = (name, file, what) =>
+  `\n## ${what}\n\n\`specs/${name}/${file}\`\n\nYou already have this from earlier in this session. Re-read the file only if you have lost it.\n`;
+
+export function composeBuildPrompt(root, config, idea, failures, artifacts, { alreadySent = false } = {}) {
   const failureBlock =
     failures && failures.length
       ? `\n## What failed last time\n\nThe factory checked your work and these did not pass. Fix them, then continue.\n\n${failures
@@ -217,21 +285,28 @@ export function composeBuildPrompt(root, config, idea, failures, artifacts) {
       : "";
 
   const specBlock = artifacts?.spec
-    ? `\n## The approved spec\n\n\`specs/${artifacts.name}/spec.md\`\n\n${artifacts.spec}\n`
+    ? alreadySent
+      ? haveIt(artifacts.name, "spec.md", "The approved spec")
+      : `\n## The approved spec\n\n\`specs/${artifacts.name}/spec.md\`\n\n${artifacts.spec}\n`
     : "";
   const planBlock = artifacts?.plan
-    ? `\n## The plan\n\n\`specs/${artifacts.name}/plan.md\`\n\n${artifacts.plan}\n`
+    ? alreadySent
+      ? haveIt(artifacts.name, "plan.md", "The plan")
+      : `\n## The plan\n\n\`specs/${artifacts.name}/plan.md\`\n\n${artifacts.plan}\n`
     : "";
   const tasksBlock = artifacts?.tasks
-    ? `\n## The tasks\n\n\`specs/${artifacts.name}/tasks.md\`\n\nTick each box only when its proof passes.\n\n${artifacts.tasks}\n`
+    ? alreadySent
+      ? haveIt(artifacts.name, "tasks.md", "The tasks")
+      : `\n## The tasks\n\n\`specs/${artifacts.name}/tasks.md\`\n\nTick each box only when its proof passes.\n\n${artifacts.tasks}\n`
     : "";
 
   return `You are the engineering team for "${config.name}".
 
 Read these before you start:
-- .factory/constitution.md (the rules)
 - factory.config.json (what this project is and who depends on it)
 - the code already in this project
+
+${stageRules(root, "build")}
 ${specBlock}${planBlock}${tasksBlock}
 ${roleBlock(root)}
 
@@ -278,7 +353,6 @@ function checkLines(run) {
 // rules, never the builder's prompt or reasoning.
 export function composeReviewPrompt(root, config, { artifacts, change, reviewFile, run }) {
   const rules = readTemplate(root, "review-rules.md").replaceAll("{{reviewFile}}", reviewFile);
-  const traps = section(constitutionText(root), "Known traps");
   const changeBlock = change.text
     ? `\`\`\`diff\n${change.text}\n\`\`\``
     : `The change is too large to paste. Read these files yourself:\n\n${change.files.map((file) => `- ${file}`).join("\n")}`;
@@ -291,9 +365,7 @@ ${readRole(root, "reviewer")}
 
 ${rules}
 
-## Known traps
-
-${traps || "None recorded."}
+${stageRules(root, "review")}
 
 ## The approved spec
 

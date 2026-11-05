@@ -66,7 +66,7 @@ test("secrets: a hard-coded secret in source code fails (the login-code case)", 
 
 test("secrets: a local dev database string is a possible test password, not a failure", (t) => {
   const root = temp(t);
-  write(root, "drizzle.config.ts", 'url: env ?? "postgres://postgres:postgres@127.0.0.1:5432/postgres",\n');
+  write(root, "drizzle.config.ts", 'url: env ?? "postgres://postgres:postgres@127.0.0.1:5432/postgres",\n'); // factory:allow-secret
   const { proven, maybe } = secrets(root);
   assert.equal(proven.status, "pass");
   assert.equal(maybe.status, "fail");
@@ -75,7 +75,7 @@ test("secrets: a local dev database string is a possible test password, not a fa
 
 test("secrets: a fake value in a test file is a possible test password", (t) => {
   const root = temp(t);
-  write(root, "tests/test_config.py", 'secret = "super-secret-key-12345"\n');
+  write(root, "tests/test_config.py", 'secret = "super-secret-key-12345"\n'); // factory:allow-secret
   const { proven, maybe } = secrets(root);
   assert.equal(proven.status, "pass");
   assert.equal(maybe.status, "fail");
