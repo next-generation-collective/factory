@@ -37,10 +37,10 @@ test("telemetry: nothing is shared until the builder says yes", (t) => {
 });
 
 test("telemetry: only counts leave the machine; names, paths and text are dropped", () => {
-  const sent = payload("prove", { ok: true, attempts: 2, failed: ["tests", "../etc/passwd", "secrets"], project: "Thandi's shop", file: "/Users/x/a.js", via: "chat" }, "1.0.0");
+  const sent = payload("prove", { ok: true, attempts: 2, failed: ["tests", "../etc/passwd", "secrets"], project: "Sibusiso's shop", file: "/Users/x/a.js", via: "chat" }, "1.0.0");
   assert.deepEqual(Object.keys(sent.props).sort(), ["attempts", "failed", "ok", "via"]);
   assert.deepEqual(sent.props.failed, ["tests", "secrets"]);
-  assert.equal(JSON.stringify(sent).includes("Thandi"), false);
+  assert.equal(JSON.stringify(sent).includes("Sibusiso"), false);
 });
 
 test("telemetry: it sends only when sharing, and a failure never breaks the work", async (t) => {

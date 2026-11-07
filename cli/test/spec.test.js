@@ -76,10 +76,10 @@ test("spec: approval records who and invalidates when the spec changes", async (
   setAgent(root, `specs/${name}/spec.md`, SPEC);
   await specCommand(root, {}, ["booking form"]);
 
-  const code = await specCommand(root, { approve: true, by: "Sipho" }, []);
+  const code = await specCommand(root, { approve: true, by: "Sibusiso" }, []);
   assert.equal(code, 0);
   assert.equal(activeSpec(root).state, "approved");
-  assert.equal(readApproval(root, name).approvedBy, "Sipho");
+  assert.equal(readApproval(root, name).approvedBy, "Sibusiso");
 
   appendFileSync(join(root, "specs", name, "spec.md"), "\nAn edit after approval.\n");
   assert.equal(activeSpec(root).state, "stale");
@@ -100,7 +100,7 @@ test("plan and tasks: written in order, after approval", async (t) => {
   const name = nextSpecName(root, "booking form");
   setAgent(root, `specs/${name}/spec.md`, SPEC);
   await specCommand(root, {}, ["booking form"]);
-  await specCommand(root, { approve: true, by: "Sipho" }, []);
+  await specCommand(root, { approve: true, by: "Sibusiso" }, []);
 
   assert.equal(tasksCommand(root, {}), 1);
 
@@ -145,7 +145,7 @@ test("build: an approved spec still needs an agent", async (t) => {
   const name = nextSpecName(root, "booking form");
   setAgent(root, `specs/${name}/spec.md`, SPEC);
   await specCommand(root, {}, ["booking form"]);
-  await specCommand(root, { approve: true, by: "Sipho" }, []);
+  await specCommand(root, { approve: true, by: "Sibusiso" }, []);
   setMissingAgent(root);
 
   assert.equal(build(root, { idea: "add a form" }), 2);

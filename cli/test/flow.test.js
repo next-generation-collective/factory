@@ -138,11 +138,11 @@ test("share summary: what was found, fixed and proved, with no values", () => {
     project: "demo",
     fix,
     run: { results: [{ ...row("secrets", "pass", "proven", ""), title: "Secrets in code" }, { ...row("build", "na", "proven", ""), title: "Builds" }] },
-    approval: { approvedBy: "Thandi" },
+    approval: { approvedBy: "Sibusiso" },
     diffStat: "2 files changed, 6 insertions(+), 1 deletion(-)",
   });
   assert.match(text, /Found: A credential is written in the code at src\/otp\.ts:34/);
-  assert.match(text, /approved by Thandi/);
+  assert.match(text, /approved by Sibusiso/);
   assert.match(text, /Proved by: secrets in code/);
   assert.match(text, /Not checked: builds/);
 });
@@ -150,7 +150,7 @@ test("share summary: what was found, fixed and proved, with no values", () => {
 test("build: writes the plan and tasks first, uses the spec title, records where it started", async (t) => {
   const root = project(t);
   await specCommand(root, { quiet: true }, ["booking form"]);
-  await specCommand(root, { approve: true, by: "Thandi", quiet: true }, []);
+  await specCommand(root, { approve: true, by: "Sibusiso", quiet: true }, []);
 
   assert.equal(build(root, {}), 0);
   const name = readConfig(root).spec.active;
@@ -165,7 +165,7 @@ test("build: writes the plan and tasks first, uses the spec title, records where
 test("build: deleting tests is a proven failure, sent back like any other", async (t) => {
   const root = project(t, { tests: 2 });
   await specCommand(root, { quiet: true }, ["booking form"]);
-  await specCommand(root, { approve: true, by: "Thandi", quiet: true }, []);
+  await specCommand(root, { approve: true, by: "Sibusiso", quiet: true }, []);
 
   process.env.FAKE_DELETE = join(root, "src", "t1.test.js");
   t.after(() => delete process.env.FAKE_DELETE);
@@ -175,18 +175,18 @@ test("build: deleting tests is a proven failure, sent back like any other", asyn
 
 test("approve: the name saved in the config is used, and nobody is asked", async (t) => {
   const root = project(t);
-  writeConfig(root, { ...readConfig(root), approvedBy: "Thandi" });
+  writeConfig(root, { ...readConfig(root), approvedBy: "Sibusiso" });
   await specCommand(root, { quiet: true }, ["booking form"]);
   await specCommand(root, { approve: true, quiet: true }, []);
-  assert.equal(readApproval(root, readConfig(root).spec.active).approvedBy, "Thandi");
+  assert.equal(readApproval(root, readConfig(root).spec.active).approvedBy, "Sibusiso");
 });
 
 test("factory approve: needs a terminal to read the spec, or --yes to record it", async (t) => {
   const root = project(t);
   await specCommand(root, { quiet: true }, ["booking form"]);
   assert.equal(await approveCommand(root, {}, []), 1);
-  assert.equal(await approveCommand(root, { yes: true, by: "Thandi" }, []), 0);
-  assert.equal(readApproval(root, readConfig(root).spec.active).approvedBy, "Thandi");
+  assert.equal(await approveCommand(root, { yes: true, by: "Sibusiso" }, []), 0);
+  assert.equal(readApproval(root, readConfig(root).spec.active).approvedBy, "Sibusiso");
 });
 
 test("templates: one constitution, so the repo and the tool cannot drift", (t) => {
@@ -199,7 +199,7 @@ test("templates: one constitution, so the repo and the tool cannot drift", (t) =
 test("build: a job that needs its tests to pass is not done while they cannot run", async (t) => {
   const root = project(t);
   await specCommand(root, { quiet: true }, ["add the first test"]);
-  await specCommand(root, { approve: true, by: "Thandi", quiet: true }, []);
+  await specCommand(root, { approve: true, by: "Sibusiso", quiet: true }, []);
   assert.equal(build(root, { attempts: 1, requires: ["tests"] }), 1);
   assert.equal(readState(root).lastBuild, undefined);
 });
@@ -213,7 +213,7 @@ async function approvedProject(t) {
   const root = project(t);
   write(root, "src/booking.js", "export const book = () => 1;\n");
   await specCommand(root, { quiet: true }, ["booking form"]);
-  await specCommand(root, { approve: true, by: "Thandi", quiet: true }, []);
+  await specCommand(root, { approve: true, by: "Sibusiso", quiet: true }, []);
   return root;
 }
 
