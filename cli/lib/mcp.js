@@ -207,6 +207,8 @@ export const jobs = {
 
     // A job that started on the small route but outgrew it is upgraded, on the record.
     const upgraded = upgradeIfGrown(root, state, current.name);
+    // The lane the job is on now: an upgrade just rewrote it to full.
+    const lane = upgraded ? "full" : (state.lane === "quick" ? "quick" : "full");
 
     const { value: run } = captured(() => verify(root, { deep: true, config, save: true }));
     const results = formatResults(root, run, { header: false });
@@ -215,7 +217,21 @@ export const jobs = {
     const grewLine = upgraded ? `This job grew beyond the small route (${upgraded}); it is a full job now, on the record in .factory/evidence.\n` : "";
     if (!run.ok) {
       writeState(root, { notDone: notDone + 1 });
-      await track("prove", { mode: "mcp", client, ok: false, attempts: notDone + 1, failed, minutes: run.minutes ?? 0 }, VERSION);
+      await track(
+        "prove",
+        {
+          mode: "mcp",
+          client,
+          ok: false,
+          attempts: notDone + 1,
+          failed,
+          minutes: run.minutes ?? 0,
+          lane,
+          ...(upgraded ? { upgraded: true } : {}),
+          ...(notDone + 1 >= STOP_AFTER ? { stopped: true } : {}),
+        },
+        VERSION,
+      );
       if (notDone + 1 >= STOP_AFTER) {
         noteEvidence(
           root,
@@ -238,7 +254,11 @@ export const jobs = {
         `# Ran on the small route\n\n- Spec: ${current.name}\n- Date: ${new Date().toISOString().slice(0, 10)}\n- What was shorter: the spec template and the stage prompts.\n- What was not: every check, test and build ran in full, and the person approved the spec.`,
       );
     }
-    await track("prove", { mode: "mcp", client, ok: true, attempts: notDone + 1, caught: notDone > 0, minutes: run.minutes ?? 0 }, VERSION);
+    await track(
+      "prove",
+      { mode: "mcp", client, ok: true, attempts: notDone + 1, caught: notDone > 0, minutes: run.minutes ?? 0, lane, ...(upgraded ? { upgraded: true } : {}) },
+      VERSION,
+    );
     return text([`${grewLine}DONE: the checks passed.`, "", results, "", "Now call factory_review for the independent review."].join("\n"));
   },
 

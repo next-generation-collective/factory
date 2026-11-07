@@ -321,6 +321,8 @@ export async function specCommand(root, opts = {}, args = []) {
   }
 
   setActive(root, name);
+  // The route this job took, so the prove count can say which lane it ran on.
+  writeState(root, { lane: opts.lane === "quick" ? "quick" : "full" });
   console.log(colors.green(`Spec written to ${target}`));
   if (!opts.quiet) {
     console.log("");
@@ -1001,7 +1003,7 @@ export function build(root, opts = {}) {
       if (!reviewed || reviewed.passed) {
         writeState(root, { lastBuild: new Date().toISOString() });
         recordProven({ caught: attempt > 1 ? 1 : 0 });
-        send("prove", { mode: "cli", ok: true, attempts: attempt, caught: attempt > 1, verdict: reviewed ? "approve" : "none", minutes: run.minutes ?? 0 }, PACKAGE_VERSION);
+        send("prove", { mode: "cli", ok: true, attempts: attempt, caught: attempt > 1, verdict: reviewed ? "approve" : "none", minutes: run.minutes ?? 0, lane: readState(root).lane ?? "full" }, PACKAGE_VERSION);
         console.log(colors.dim('Was it useful? Tell us in one line: factory feedback "..."'));
         console.log(colors.green(`DONE: the checks passed${reviewed ? " and a separate session approved the change" : ""}. Proof: ${rel(root, run.mdFile)}`));
         return 0;
@@ -1019,7 +1021,7 @@ export function build(root, opts = {}) {
   }
 
   console.log(colors.red("NOT DONE: the checks did not pass. Nothing was called done."));
-  send("prove", { mode: "cli", ok: false, attempts, failed: failures.map((f) => f.id).filter(Boolean), minutes: lastMinutes }, PACKAGE_VERSION);
+  send("prove", { mode: "cli", ok: false, attempts, failed: failures.map((f) => f.id).filter(Boolean), minutes: lastMinutes, lane: readState(root).lane ?? "full" }, PACKAGE_VERSION);
   return 1;
 }
 
