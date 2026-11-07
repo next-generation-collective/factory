@@ -10,7 +10,7 @@
       "name": "factory",
       "source": "./plugin",
       "description": "Every change planned, approved by you, built, checked and proven.",
-      "version": "0.6.0"
+      "version": "0.7.0"
     }
   ]
 }

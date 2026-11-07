@@ -2,6 +2,16 @@
 
 Newest first. Dates are YYYY-MM-DD.
 
+## 0.7.0 (2026-11-07, in the Claude Code plugin)
+
+### Added
+
+- If you chose to share anonymous counts, a prove count now also says which route the job
+  took (`quick` or `full`), whether the loop stopped itself at 3 failed rounds, and whether
+  a small job was upgraded to a full one. That is how Next-Gen sees whether the small route
+  helps and where builders get stuck. Still never code, file names or personal details, and
+  still only if you said yes: `docs/TELEMETRY.md` lists every field.
+
 ## 0.6.0 (2026-11-05, in the Claude Code plugin)
 
 A factory job now costs far fewer AI tokens, which matters most if you pay for them

@@ -36,6 +36,9 @@ only your answer. To change it later, just tell your AI: *"stop sharing with Nex
 | The kind of feedback you gave, if you used `factory feedback` | `loved`, `false-alarm`, `confusing`, `wish` | To see what to fix first; your words go only to the GitHub form you submit |
 | How a job ended | done or not, attempts, whether a mistake was caught, review verdict, approval by box or chat | To know if it helps |
 | How long the checks took, in whole minutes | `0`, `12` | To see when a run drags on and bound it |
+| Which route the job took (from 0.7.0) | `quick`, `full` | To see whether the small route saves tokens |
+| Whether the prove loop stopped itself at 3 failed rounds (from 0.7.0) | `true` | To see where builders get stuck |
+| Whether a small job was upgraded to a full one (from 0.7.0) | `true` | To see whether the small-route limits are right |
 
 Anything else is dropped on your computer before sending, by `cli/lib/telemetry.js`, which
 you can read. The same counts, under the same yes, are sent whether you use the command

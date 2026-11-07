@@ -57,7 +57,7 @@ export const SHARE_QUESTION =
   "Help make the factory better for every builder? It shares anonymous counts: which checks ran and what they caught. Never your code, file names or personal details. You can change this any time with: factory share off";
 
 // Counts only. Anything else a caller passes is dropped here, before it can leave the machine.
-const ALLOWED = new Set(["mode", "client", "kind", "status", "via", "ok", "attempts", "caught", "verdict", "checks", "failed", "minutes", "feeling"]);
+const ALLOWED = new Set(["mode", "client", "kind", "status", "via", "ok", "attempts", "caught", "verdict", "checks", "failed", "minutes", "feeling", "lane", "stopped", "upgraded"]);
 
 function clean(props) {
   const out = {};
