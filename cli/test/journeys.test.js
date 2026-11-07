@@ -153,7 +153,7 @@ async function webProject(t) {
   const agent = { command: process.execPath, args: ["-e", FAKE] };
   writeConfig(root, { ...readConfig(root), agent: { ...agent, journeys: agent } });
   await specCommand(root, { quiet: true }, ["booking page"]);
-  await specCommand(root, { approve: true, by: "Thandi", quiet: true }, []);
+  await specCommand(root, { approve: true, by: "Sibusiso", quiet: true }, []);
   return root;
 }
 
